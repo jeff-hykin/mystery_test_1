@@ -81,13 +81,8 @@ fi
 #
 # stage0.3: use Python to run the rest
 #
-echo "Bootstrapping, stage 0.3"
-
-# Point this at your real Python installer entrypoint (zipapp, module, or raw script).
-# Example: a raw python file that you host
-
-# Download + exec (keeps bootstrap self-contained; no pip needed)
-"$python_exe" -c '
+echo "Bootstrapping, stage 0.3" && "$python_exe" -c '
+print("- temp python loaded")
 import os, sys, urllib.request, tempfile, runpy
 
 uri = "https://github.com/jeff-hykin/mystery_test_1/raw/refs/heads/master/installer.pyz"
