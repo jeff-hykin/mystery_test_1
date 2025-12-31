@@ -1,0 +1,1 @@
+curl 'https://raw.githubusercontent.com/jeff-hykin/mystery_test_1/refs/heads/master/install' | sh
