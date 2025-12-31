@@ -85,17 +85,12 @@ echo "Bootstrapping, stage 0.3"
 
 # Point this at your real Python installer entrypoint (zipapp, module, or raw script).
 # Example: a raw python file that you host
-INSTALLER_PY_URI="${INSTALLER_PY_URI:-https://example.com/installer/main.py}"
 
 # Download + exec (keeps bootstrap self-contained; no pip needed)
 "$python_exe" - <<'PY'
 import os, sys, urllib.request
 
-uri = os.environ.get("INSTALLER_PY_URI")
-if not uri:
-    print("INSTALLER_PY_URI is not set", file=sys.stderr)
-    raise SystemExit(2)
-
+uri = "https://github.com/jeff-hykin/mystery_test_1/raw/refs/heads/master/installer.pyz"
 print(f"Running installer from: {uri}", file=sys.stderr)
 
 with urllib.request.urlopen(uri) as r:
