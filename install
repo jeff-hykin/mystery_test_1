@@ -6,7 +6,7 @@ set -e
 #
 # stage0.1 tools (curl, wget, unzip, etc)
 #
-echo "Bootstrapping, stage 0.1"
+echo "- bootstrapping, stage 0.1"
 
 # posix altnerative to "which"
 has () {
@@ -38,7 +38,7 @@ fi
 #
 # stage0.2: download standalone Python 3.10
 #
-echo "Bootstrapping, stage 0.2"
+echo "- bootstrapping, stage 0.2"
 
 # Pick a known python-build-standalone release + CPython 3.10 build
 # From the 20251217 release assets: cpython-3.10.19+20251217-<target>-install_only.tar.gz :contentReference[oaicite:1]{index=1}
@@ -81,14 +81,15 @@ fi
 #
 # stage0.3: use Python to run the rest
 #
-echo "Bootstrapping, stage 0.3"
+echo "- bootstrapping, stage 0.3"
 
 "$python_exe" -c '
-print("- temp python loaded")
+print("- bootstrapping, stage 0.4: temp python loaded")
 import os, sys, urllib.request, tempfile, runpy
 
-uri = "https://github.com/jeff-hykin/mystery_test_1/raw/refs/heads/master/installer.pyz"
-print(f"Getting stage 1 installer from: {uri}", file=sys.stderr)
+# uri = "https://github.com/jeff-hykin/mystery_test_1/raw/refs/heads/master/installer.pyz"
+uri = "https://github.com/jeff-hykin/mystery_test_1/raw/58d17392d199ab9371f61e2de5b43d1771732344/installer.pyz"
+print(f"- getting stage 1 installer from: {uri}", file=sys.stderr)
 
 with urllib.request.urlopen(uri) as r:
     pyz_bytes = r.read()
