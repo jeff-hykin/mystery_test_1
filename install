@@ -81,7 +81,9 @@ fi
 #
 # stage0.3: use Python to run the rest
 #
-echo "Bootstrapping, stage 0.3" && "$python_exe" -c '
+echo "Bootstrapping, stage 0.3"
+
+"$python_exe" -c '
 print("- temp python loaded")
 import os, sys, urllib.request, tempfile, runpy
 
@@ -105,4 +107,5 @@ finally:
     except OSError: pass
 '
 
-echo "Done"
+: "" # for some reason whatever command is put last is not executed when run with: curl -fsSL 'URL_TO_THIS_SCRIPT' | sh -s -- < /dev/tty
+# so we just ignore that problem and put a dud command here
