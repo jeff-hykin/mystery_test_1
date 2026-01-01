@@ -8,6 +8,12 @@ set -e
 #
 echo "- bootstrapping, stage 0.1"
 
+# If stdin isn't a terminal but we have a controlling tty, use it for interactive reads
+# this is necessary for interactivity
+if [ ! -t 0 ] && [ -r /dev/tty ]; then
+    exec </dev/tty
+fi
+
 # posix altnerative to "which"
 has () {
     command -v "$1" >/dev/null 2>&1
