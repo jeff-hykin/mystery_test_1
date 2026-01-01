@@ -105,4 +105,4 @@ try:
 finally:
     try: os.remove(tmp_path)
     except OSError: pass
-'
+' "$@"
