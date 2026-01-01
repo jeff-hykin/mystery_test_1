@@ -83,11 +83,7 @@ fi
 #
 echo "- bootstrapping, stage 0.3"
 
-# If stdin isn't a terminal but we have a controlling tty, use it for interactive reads
-# this is necessary for interactivity
-if [ ! -t 0 ] && [ -r /dev/tty ]; then
-    # interactive installer
-    exec "$python_exe" -c '
+"$python_exe" -c '
 print("- bootstrapping, stage 0.4: temp python loaded")
 import os, sys, urllib.request, tempfile, runpy
 
@@ -110,8 +106,7 @@ try:
 finally:
     try: os.remove(tmp_path)
     except OSError: pass
-' < /dev/tty
+'
 
 : "" # for some reason whatever command is put last is not executed when run with: curl -fsSL 'URL_TO_THIS_SCRIPT' | sh -s -- < /dev/tty
 # so we just ignore that problem and put a dud command here
-fi
