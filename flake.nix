@@ -2,8 +2,8 @@
   description = "Project dev environment as Nix shell + DockerTools layered image";
 
   inputs = {
-    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-25.05";
-    home-manager.url = "github:nix-community/home-manager/release-25.05";
+    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-25.11";
+    home-manager.url = "github:nix-community/home-manager/release-25.11";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
     flake-utils.url  = "github:numtide/flake-utils";
     lib.url          = "github:jeff-hykin/quick-nix-toolkits";
@@ -282,7 +282,7 @@
               # all home-manager options:
               # https://nix-community.github.io/home-manager/options.xhtml
               home.homeDirectory = "/tmp/virtual_homes/dimos";
-              home.stateVersion = "25.05";
+              home.stateVersion = "25.11";
               home.packages = devPackages;
 
               programs = {
