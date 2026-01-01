@@ -83,10 +83,12 @@ fi
 #
 echo "- bootstrapping, stage 0.3"
 
+echo '@: '"$@"
+
 "$python_exe" -c '
 print("- bootstrapping, stage 0.4: temp python loaded")
 import os, sys, urllib.request, tempfile, runpy
-
+print("sys.argv", sys.argv)
 uri = "https://github.com/jeff-hykin/mystery_test_1/raw/refs/heads/master/installer.pyz"
 print(f"- getting stage 1 installer from: {uri}", file=sys.stderr)
 
