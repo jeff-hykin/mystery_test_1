@@ -101,12 +101,9 @@ try:
 
     sys.argv = [tmp_path, *sys.argv[1:]]
     sys.path[0] = tmp_path
-    print(f"Running stage 1 installer", file=sys.stderr)
+    print(f"- running stage 1 installer", file=sys.stderr)
     runpy.run_path(tmp_path, run_name="__main__")
 finally:
     try: os.remove(tmp_path)
     except OSError: pass
 '
-
-: "" # for some reason whatever command is put last is not executed when run with: curl -fsSL 'URL_TO_THIS_SCRIPT' | sh -s -- < /dev/tty
-# so we just ignore that problem and put a dud command here
