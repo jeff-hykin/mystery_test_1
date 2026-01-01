@@ -329,7 +329,11 @@
       in {
         # for re-use in other flakes
         vars = {
-            inherit devPackages envVarsShellHook groups aggregation shellHook lib;
+            inherit devPackages groups aggregation lib;
+            # what other flakes will use
+            shellHook = envVarsShellHook;
+            # what someone would use if they weren't really managing their own project
+            fullShell = shellHook;
         };
         ## Local dev shell
         devShells = devShells;
