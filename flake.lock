@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "diagon": {
+      "locked": {
+        "lastModified": 1763299369,
+        "narHash": "sha256-z/q22EqZfF79vZQh6K/yCmt8iqDvUSkIVTH+Omhv1VE=",
+        "owner": "petertrotman",
+        "repo": "nixpkgs",
+        "rev": "dff059e25eee7aa958c606aeb6b5879ae1c674f0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "petertrotman",
+        "ref": "Diagon",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -21,20 +37,20 @@
     "home-manager": {
       "inputs": {
         "nixpkgs": [
+          "xome",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1767024057,
-        "narHash": "sha256-B1aycRjMRvb6QOGbnqDhiDzZwMebj5jxZ5qyJzaKvpI=",
+        "lastModified": 1753983724,
+        "narHash": "sha256-2vlAOJv4lBrE+P1uOGhZ1symyjXTRdn/mz0tZ6faQcg=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "34578a2fdfce4257ce5f5baf6e7efbd4e4e252b1",
+        "rev": "7035020a507ed616e2b20c61491ae3eaa8e5462c",
         "type": "github"
       },
       "original": {
         "owner": "nix-community",
-        "ref": "release-25.11",
         "repo": "home-manager",
         "type": "github"
       }
@@ -92,24 +108,24 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1767047869,
-        "narHash": "sha256-tzYsEzXEVa7op1LTnrLSiPGrcCY6948iD0EcNLWcmzo=",
+        "lastModified": 1748929857,
+        "narHash": "sha256-lcZQ8RhsmhsK8u7LIFsJhsLh/pzR9yZ8yqpTzyGdj+Q=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "89dbf01df72eb5ebe3b24a86334b12c27d68016a",
+        "rev": "c2a03962b8e24e669fb37b7df10e7c79531ff1a4",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixos-25.11",
+        "ref": "nixos-unstable",
         "repo": "nixpkgs",
         "type": "github"
       }
     },
     "root": {
       "inputs": {
+        "diagon": "diagon",
         "flake-utils": "flake-utils",
-        "home-manager": "home-manager",
         "lib": "lib",
         "nixpkgs": "nixpkgs",
         "xome": "xome"
@@ -135,9 +151,7 @@
         "flake-utils": [
           "flake-utils"
         ],
-        "home-manager": [
-          "home-manager"
-        ],
+        "home-manager": "home-manager",
         "libSource": "libSource_2",
         "nixpkgs": [
           "nixpkgs"
