@@ -12,6 +12,7 @@
     xome.inputs.nixpkgs.follows      = "nixpkgs";
     xome.inputs.flake-utils.follows  = "flake-utils";
     xome.inputs.home-manager.follows = "home-manager";
+    diagon.url       = "github:petertrotman/nixpkgs/Diagon";
   };
 
   outputs = { self, nixpkgs, flake-utils, lib, xome, diagon, ... }:
