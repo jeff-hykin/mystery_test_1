@@ -22,10 +22,10 @@ fi
 
 # usage: download <url> <output_path>, uses either wget or curl
 download () {
-    if has curl; then
-        curl --fail --location --progress-bar --output "$2" "$1"
-    else
+    if has wget; then
         wget --quiet --show-progress --output-document="$2" "$1"
+    else
+        curl --fail --location --progress-bar --output "$2" "$1"
     fi
 }
 
@@ -68,7 +68,7 @@ if [ ! -x "$python_exe" ]; then
   mkdir -p "$PYTHON_INSTALL"
 
   tmp_tar="$PYTHON_INSTALL/python.tar.gz"
-  download "$python_uri" "$tmp_tar" 
+  download "$python_uri" "$tmp_tar"
 
   # The tarball contains a top-level "python/" directory; strip it into PYTHON_INSTALL
   # (works with GNU tar and BSD tar)
@@ -88,7 +88,9 @@ print("- bootstrapping, stage 0.4: temp python loaded")
 import os, sys, urllib.request, tempfile, runpy
 
 # FIXME: update this to dimos repo before launch
+# uri = "https://github.com/dimensionalOS/dimos/raw/refs/heads/main/installer.pyz"
 uri = "https://github.com/jeff-hykin/mystery_test_1/raw/refs/heads/master/installer.pyz"
+uri = "https://github.com/jeff-hykin/mystery_test_1/6ff1c69ca8f89b34d76fed3f68f8cda608f464fc/master/installer.pyz"
 print(f"- getting stage 1 installer from: {uri}", file=sys.stderr)
 
 with urllib.request.urlopen(uri) as r:
