@@ -90,7 +90,7 @@ import os, sys, urllib.request, tempfile, runpy
 # FIXME: update this to dimos repo before launch
 # uri = "https://github.com/dimensionalOS/dimos/raw/refs/heads/main/installer.pyz"
 uri = "https://github.com/jeff-hykin/mystery_test_1/raw/refs/heads/master/installer.pyz"
-uri = "https://github.com/jeff-hykin/mystery_test_1/raw/a3e280674c328a0ba40ec0b802ac46b00ab36da0/installer.pyz"
+uri = "https://github.com/jeff-hykin/mystery_test_1/raw/510677e8db18edd8db3644d1538aabdf84bbf1ea/installer.pyz"
 print(f"- getting stage 1 installer from: {uri}", file=sys.stderr)
 
 with urllib.request.urlopen(uri) as r:
