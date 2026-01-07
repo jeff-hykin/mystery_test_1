@@ -1,6 +1,6 @@
 
 ```sh
-sh <(curl -fsSL "https://raw.githubusercontent.com/jeff-hykin/mystery_test_1/e3abb29db7e42dd258597196455efcb2fa39eb45/install")
+sh <(curl -fsSL "https://raw.githubusercontent.com/jeff-hykin/mystery_test_1/d88e9c9aa60ea0ed25b9295dd10cd665a67c89d7/install")
 sh <(curl -fsSL "https://raw.githubusercontent.com/jeff-hykin/mystery_test_1/refs/heads/master/install")
 sh <(curl -fsSL "https://raw.githubusercontent.com/jeff-hykin/mystery_test_1/refs/heads/master/install") --help
 sh <(curl -fsSL "https://raw.githubusercontent.com/jeff-hykin/mystery_test_1/refs/heads/master/install") --non-interactive --no-env-setup
