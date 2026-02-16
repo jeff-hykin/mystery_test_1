@@ -70,8 +70,8 @@ jobs:
 
           uv venv
           . .venv/bin/activate
-
-          uv pip install -e '.[base,dev,manipulation,misc,unitree,drone]'
+          
+          uv pip install "dimos[base,dev,manipulation,misc,unitree,drone] @ git+https://github.com/dimensionalOS/dimos.git@dev"
           pre-commit install
           uv run pytest dimos
 
