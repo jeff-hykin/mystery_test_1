@@ -1,0 +1,115 @@
+name: quickstart-ci
+
+on:
+  pull_request:
+    branches:
+      - master
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  # quick uses as many caches as possible
+  quick-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ubuntu system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            curl \
+            g++ \
+            portaudio19-dev \
+            git-lfs \
+            libturbojpeg \
+            python3-dev \
+            pre-commit
+
+      - name: Cache uv downloads/builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-py312-${{ github.run_id }}
+          restore-keys: |
+            uv-${{ runner.os }}-py312-
+            uv-${{ runner.os }}-
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py312-${{ github.run_id }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-py312-
+            pre-commit-${{ runner.os }}-
+
+      - name: Cache virtualenv (best-effort)
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py312-${{ github.run_id }}
+          restore-keys: |
+            venv-${{ runner.os }}-py312-
+            venv-${{ runner.os }}-
+
+      - name: Quickstart install and test
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+
+          export GIT_LFS_SKIP_SMUDGE=1
+          git lfs install
+
+          uv venv
+          . .venv/bin/activate
+
+          uv pip install -e '.[base,dev,manipulation,misc,unitree,drone]'
+          pre-commit install
+          uv run pytest dimos
+
+  slow-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ubuntu system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            curl \
+            g++ \
+            portaudio19-dev \
+            git-lfs \
+            libturbojpeg \
+            python3-dev \
+            pre-commit
+
+      - name: Quickstart install and test (no cache)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+
+          export GIT_LFS_SKIP_SMUDGE=1
+          git lfs install
+
+          rm -rf ~/.cache/uv ~/.cache/pre-commit .venv
+
+          uv venv
+          . .venv/bin/activate
+
+          uv pip install -e '.[base,dev,manipulation,misc,unitree,drone]'
+          pre-commit install
+          uv run pytest dimos
