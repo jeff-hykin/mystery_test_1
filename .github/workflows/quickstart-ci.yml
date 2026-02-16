@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  # quick uses as many caches as possible
+  # use as many caches as possible for the quick run
   quick-test:
     runs-on: ubuntu-24.04
     steps:
@@ -63,8 +63,11 @@ jobs:
 
       - name: Quickstart install and test
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
+          # if uv not here, get it
+          if ! [ -n "$(command -v "uv")" ]; then
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+          fi
 
           export GIT_LFS_SKIP_SMUDGE=1
           git lfs install
