@@ -38,7 +38,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
-          key: uv-${{ runner.os }}-py312-${{ github.run_id }}
+          key: uv-${{ runner.os }}-py312-${{ hashFiles('~/.cache/uv/**/*') }}
           restore-keys: |
             uv-${{ runner.os }}-py312-
             uv-${{ runner.os }}-
@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-py312-${{ github.run_id }}
+          key: pre-commit-${{ runner.os }}-py312-${{ hashFiles('dimos/.pre-commit-config.yaml') }}
           restore-keys: |
             pre-commit-${{ runner.os }}-py312-
             pre-commit-${{ runner.os }}-
@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py312-${{ github.run_id }}
+          key: venv-${{ runner.os }}-py312-${{ hashFiles('dimos/**/pyproject.toml', 'dimos/**/setup.py', 'dimos/**/requirements*.txt') }}
           restore-keys: |
             venv-${{ runner.os }}-py312-
             venv-${{ runner.os }}-
@@ -65,9 +65,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dimos
-          key: dimos-git-${{ runner.os }}-${{ github.run_id }}
+          key: dimos-git
           restore-keys: |
-            dimos-git-${{ runner.os }}-
+            dimos-git
 
       - name: Quickstart install and test
         run: |
