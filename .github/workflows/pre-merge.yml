@@ -114,7 +114,7 @@ jobs:
 
             brew install gnu-sed portaudio git-lfs libjpeg-turbo
             export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
-            export ARCHFLAGS="arm64"
+            export ARCHFLAGS="apple-m3"
 
           else
             sudo apt-get update
