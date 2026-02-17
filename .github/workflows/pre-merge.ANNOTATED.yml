@@ -1,0 +1,272 @@
+# ============================================================================
+# WORKFLOW NAME
+# ============================================================================
+# The "name" field defines the display name shown in GitHub Actions UI
+# This appears in: PR checks, Actions tab, status badges, etc.
+# Convention: Use descriptive names (kebab-case or snake_case)
+name: pre_merge
+
+# ============================================================================
+# TRIGGER EVENTS (on)
+# ============================================================================
+# The "on" keyword defines when this workflow should run
+# Available trigger types: push, pull_request, schedule, workflow_dispatch,
+# workflow_call, release, issues, etc.
+# See: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows
+on:
+  # pull_request: Runs when PRs are opened, synchronized (new commits), or reopened
+  # Options: opened, synchronize, reopened, closed, assigned, labeled, etc.
+  # Why use this: Ensures code is tested before merging into protected branches
+  pull_request:
+    branches:
+      # Only trigger on PRs targeting these branches
+      # Why: Avoids running tests on PRs to feature branches (saves CI time)
+      - master
+      - dev
+
+  # workflow_dispatch: Allows manual triggering from GitHub UI
+  # Options: Can define custom input parameters (text, boolean, choice, environment)
+  # Why use this: Useful for manual testing, re-running failed workflows, or ad-hoc runs
+  # Example with inputs:
+  #   workflow_dispatch:
+  #     inputs:
+  #       debug:
+  #         description: 'Enable debug mode'
+  #         required: false
+  #         type: boolean
+  workflow_dispatch:
+
+# ============================================================================
+# PERMISSIONS
+# ============================================================================
+# Defines what GitHub token permissions this workflow has
+# Default: read-all for forks, write-all for same-repo
+# Best practice: Use principle of least privilege (only grant what's needed)
+# Available scopes: actions, checks, contents, deployments, id-token, issues,
+#                   discussions, packages, pages, pull-requests, etc.
+# Each can be: read, write, or none
+# Why explicitly set: Security - prevents accidental writes/modifications
+permissions:
+  contents: read  # Only read access to repository contents (code, commits)
+  # Other common permissions:
+  # contents: write  # Needed for: pushing code, creating releases
+  # pull-requests: write  # Needed for: commenting on PRs, labeling
+  # packages: write  # Needed for: publishing Docker images to GHCR
+  # checks: write  # Needed for: creating custom check runs
+
+# ============================================================================
+# JOBS
+# ============================================================================
+# A workflow contains one or more jobs that run in parallel by default
+# Jobs can be made sequential using "needs" keyword
+# Each job runs on a fresh virtual machine (runner)
+jobs:
+  # Job ID (used for referencing in "needs", logs, status checks)
+  # Convention: Use descriptive snake_case names
+  pytest_fast:
+    # ========================================================================
+    # STRATEGY (Matrix builds)
+    # ========================================================================
+    # Strategy allows running the same job multiple times with different configurations
+    # Most common use: matrix builds for multiple OS/language versions
+    # Other options: fail-fast (default: true), max-parallel (limits concurrent jobs)
+    strategy:
+      # Matrix: Creates a job for each combination of variables
+      # Example: os: [ubuntu, macos], python: [3.11, 3.12] = 4 jobs total
+      # Why use matrix: Test cross-platform compatibility efficiently
+      matrix:
+        # Define matrix variables (can be referenced as ${{ matrix.variable }})
+        os: [ubuntu-24.04, macos-15]  # Multiple values create parallel jobs
+        # Available GitHub-hosted runners:
+        # Ubuntu: ubuntu-latest, ubuntu-24.04, ubuntu-22.04, ubuntu-20.04
+        # macOS: macos-latest (macOS 15), macos-15 (M1), macos-14 (M1), macos-13 (Intel)
+        # Windows: windows-latest, windows-2022, windows-2019
+        # Self-hosted: [self-hosted, linux, x64] (must match ALL labels)
+
+      # Other strategy options:
+      # fail-fast: true  # (default) Stop all matrix jobs if one fails
+      # max-parallel: 2  # Limit concurrent matrix jobs (useful for rate limits)
+
+      # Matrix include/exclude examples:
+      # include:  # Add specific configurations
+      #   - os: ubuntu-latest
+      #     python-version: 3.13-dev
+      # exclude:  # Skip specific combinations
+      #   - os: macos-14
+      #     python-version: 3.8
+
+    # ========================================================================
+    # RUNNER
+    # ========================================================================
+    # runs-on: Specifies the virtual machine (runner) to execute the job on
+    # Can be: string (single runner) or expression (computed dynamically)
+    # Using matrix variable to run on multiple operating systems
+    runs-on: ${{ matrix.os }}
+    # Expression syntax: ${{ }} allows accessing context variables
+    # Available contexts: github, env, vars, job, steps, runner, secrets, etc.
+    # See: https://docs.github.com/en/actions/learn-github-actions/contexts
+
+    # ========================================================================
+    # STEPS
+    # ========================================================================
+    # Steps are sequential commands/actions within a job
+    # Each step runs in the same runner environment (shares filesystem, env vars)
+    # Steps can be: "uses" (action from marketplace) or "run" (shell command)
+    steps:
+      # ----------------------------------------------------------------------
+      # CHECKOUT ACTION
+      # ----------------------------------------------------------------------
+      # uses: Runs a pre-built action from GitHub marketplace or another repo
+      # Format: {owner}/{repo}@{ref} or {owner}/{repo}/{path}@{ref}
+      # @v4 is a tag/release version (can also use @main, @sha)
+      # Why checkout first: Most workflows need the repository code to test/build
+      - uses: actions/checkout@v4
+        # Common checkout options:
+        # with:
+        #   fetch-depth: 0        # Fetch all history (default: 1 for shallow clone)
+        #   submodules: true      # Checkout git submodules
+        #   lfs: true             # Checkout Git LFS files
+        #   token: ${{ secrets.PAT }}  # Use PAT for private repos
+        #   ref: develop          # Checkout specific branch/tag/SHA
+
+      # ----------------------------------------------------------------------
+      # SETUP UV (Python package manager)
+      # ----------------------------------------------------------------------
+      - name: Setup uv
+        # name: Optional but recommended - shows in logs/UI
+        # Makes it easier to identify which step failed
+        uses: astral-sh/setup-uv@v4
+        with:
+          # "with" provides inputs to the action
+          # Each action defines its own input parameters (see action's README)
+          enable-cache: true  # Cache uv packages to speed up subsequent runs
+          # Why caching: Downloads are expensive (time + bandwidth)
+          # Cache key is auto-generated based on lockfile by this action
+
+          python-version: "3.12"  # Specifies Python version to install
+          # Options: "3.12", "3.11", "3.x" (latest 3.x), "pypy3.9", etc.
+
+          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-py3.12
+          # Custom cache key suffix to separate caches by OS and architecture
+          # Why: Different OS/arch may have different compiled dependencies
+          # runner.os: Linux, macOS, Windows
+          # runner.arch: X64, ARM64, ARM
+
+      # ----------------------------------------------------------------------
+      # INSTALL SYSTEM DEPENDENCIES
+      # ----------------------------------------------------------------------
+      - name: Install System dependencies
+        # "run" executes shell commands
+        # Default shell: bash on Linux/macOS, pwsh on Windows
+        # Can override with: shell: bash
+        run: |
+          # Multi-line commands using YAML pipe (|) operator
+          # Each line runs in the same shell session (variables persist)
+
+          # Conditional execution based on OS
+          # uname output: Darwin (macOS), Linux (Ubuntu), MINGW64_NT (Windows Git Bash)
+          if [ "$(uname)" = "Darwin" ]; then
+            # ============ macOS-specific setup ============
+
+            # Install Homebrew (package manager for macOS)
+            # Note: Homebrew is pre-installed on GitHub's macOS runners
+            # This ensures it's present even if not pre-installed
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+            # Print Homebrew installation location for debugging
+            # macOS M1: /opt/homebrew, macOS Intel: /usr/local
+            brew --prefix
+
+            # Debug: Print Python architecture and executable path
+            # Useful for troubleshooting architecture mismatches (arm64 vs x86_64)
+            uv run python -c "import platform,sys; print(platform.machine()); print(sys.executable)"
+
+            # Install required system libraries via Homebrew
+            # gnu-sed: GNU version of sed (macOS has BSD sed with different syntax)
+            # portaudio: Audio library (for pyaudio Python package)
+            # git-lfs: Git Large File Storage (for binary files)
+            # libjpeg-turbo: Fast JPEG library (for image processing)
+            brew install gnu-sed portaudio git-lfs libjpeg-turbo
+
+            # Add GNU sed to PATH (makes 'sed' use GNU version instead of BSD)
+            # Why: Scripts may rely on GNU sed features not in BSD sed
+            export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
+
+            # ARCHFLAGS: Compiler flags for specifying architecture
+            # Uncommented if needed for packages that need explicit arch specification
+            # export ARCHFLAGS="-arch $(uname -m)"  # arm64 or x86_64
+          else
+            # ============ Ubuntu-specific setup ============
+
+            # Update package index
+            # Why: Ensures we get latest package versions
+            sudo apt-get update
+
+            # Install required system libraries via apt
+            # -y: Non-interactive (auto-yes to prompts)
+            sudo apt-get install -y \
+              curl \                 # HTTP client for downloads
+              g++ \                  # GNU C++ compiler (for native extensions)
+              portaudio19-dev \      # Audio library headers (for pyaudio)
+              git-lfs \              # Git Large File Storage
+              libturbojpeg \         # Fast JPEG library
+              python3-dev \          # Python headers (for building C extensions)
+              pre-commit             # Git hooks framework for code quality checks
+          fi
+        # Other "run" options:
+        # shell: bash  # Override default shell (bash, sh, python, pwsh, etc.)
+        # working-directory: ./subdir  # Run command in specific directory
+        # env:  # Set environment variables for this step only
+        #   DEBUG: true
+        # continue-on-error: true  # Allow job to continue if this step fails
+        # timeout-minutes: 10  # Kill step if it runs longer than this
+        # if: ${{ matrix.os == 'ubuntu-latest' }}  # Conditional execution
+
+      # ----------------------------------------------------------------------
+      # RUN TESTS
+      # ----------------------------------------------------------------------
+      - name: Install and run tests
+        run: |
+          # Execute project-specific CI script
+          # This script likely: installs Python deps (via uv), runs pytest
+          bin/ci-fast
+        # Why use a script: Keeps workflow file simple, logic in version control
+        # Alternative: Put all commands directly in workflow (harder to test locally)
+
+    # ========================================================================
+    # OTHER JOB-LEVEL OPTIONS (not used in this workflow)
+    # ========================================================================
+    # needs: [job1, job2]  # Wait for these jobs to complete first (sequential execution)
+    # if: ${{ github.event_name == 'push' }}  # Conditional job execution
+    # timeout-minutes: 60  # Kill job if it runs longer (default: 360)
+    # continue-on-error: true  # Don't fail workflow if this job fails
+    # outputs:  # Export values to use in dependent jobs
+    #   version: ${{ steps.version.outputs.value }}
+    # container:  # Run job in a Docker container instead of directly on runner
+    #   image: node:16
+    #   env:
+    #     NODE_ENV: production
+    # services:  # Start service containers (databases, redis, etc.)
+    #   postgres:
+    #     image: postgres:15
+    #     env:
+    #       POSTGRES_PASSWORD: postgres
+    # environment:  # Link to GitHub Environment for secrets/protection rules
+    #   name: production
+    #   url: https://example.com
+
+# ============================================================================
+# ADDITIONAL WORKFLOW-LEVEL OPTIONS (not used in this workflow)
+# ============================================================================
+# env:  # Environment variables available to all jobs
+#   NODE_ENV: production
+#   API_URL: https://api.example.com
+#
+# concurrency:  # Prevent multiple runs of this workflow from running concurrently
+#   group: ${{ github.workflow }}-${{ github.ref }}
+#   cancel-in-progress: true  # Cancel in-progress runs when new one starts
+#
+# defaults:  # Default settings for all run steps in all jobs
+#   run:
+#     shell: bash
+#     working-directory: ./src

@@ -1,0 +1,382 @@
+# ============================================================================
+# REUSABLE WORKFLOW TEMPLATE FOR DOCKER BUILDS
+# ============================================================================
+# This is a reusable workflow (called by other workflows via workflow_call)
+# Purpose: Centralize Docker build logic to avoid duplication across workflows
+# Used by: docker.yml (calls this multiple times for different images)
+name: docker-build-template
+
+# ============================================================================
+# TRIGGER: WORKFLOW_CALL
+# ============================================================================
+# workflow_call: Makes this workflow callable from other workflows (like a function)
+# Cannot be triggered directly - only via another workflow's "uses" keyword
+# Alternative triggers: on: push, pull_request, etc. (but not used for templates)
+on:
+  workflow_call:
+    # inputs: Parameters passed from the calling workflow
+    # Similar to function parameters in programming
+    # Each input has: type (string/boolean/number), required flag, default value
+    inputs:
+      from-image:
+        type: string
+        required: true
+        # Example: "ubuntu:22.04" or "ghcr.io/dimensionalos/ros:dev"
+        # Purpose: Base image to build FROM in Dockerfile
+        # Why required: Every Docker build needs a base image
+
+      to-image:
+        type: string
+        required: true
+        # Example: "ghcr.io/dimensionalos/dev:latest"
+        # Purpose: Tag name for the built image (where to push it)
+        # Why required: Need to know where to publish the built image
+
+      dockerfile:
+        type: string
+        required: true
+        # Example: "dev" (looks for docker/dev/Dockerfile)
+        # Purpose: Which Dockerfile to use (path relative to docker/ directory)
+        # Why required: Need to know which Dockerfile to build
+
+      freespace:
+        type: boolean
+        default: true
+        # Purpose: Whether to run disk cleanup before building
+        # Why default true: Large Docker builds often run out of disk space
+        # When to set false: Small images that don't need cleanup (saves time)
+
+      should-run:
+        type: boolean
+        default: false
+        # Purpose: Whether this build should actually run (used for conditional builds)
+        # Why default false: Safety - prevents accidental builds
+        # Why needed: Calling workflow may determine build isn't needed (no file changes)
+
+      context:
+        type: string
+        default: '.'
+        # Purpose: Docker build context directory (root for COPY/ADD commands)
+        # Default '.': Use repository root as build context
+        # Why override: If Dockerfile is in subdirectory and needs files from elsewhere
+
+# Note about secrets:
+# Secrets are NOT defined in workflow_call (unlike inputs)
+# Calling workflow passes secrets using: secrets: inherit
+# This template accesses secrets via ${{ secrets.GITHUB_TOKEN }}
+
+# ============================================================================
+# LOCAL EXECUTION NOTE
+# ============================================================================
+# This workflow can also be run locally (outside GitHub Actions)
+# Command: ./bin/dockerbuild [image-name]
+# Useful for: Testing builds locally before pushing
+
+jobs:
+  build:
+    # ========================================================================
+    # RUNNER: SELF-HOSTED LINUX
+    # ========================================================================
+    # Self-hosted runners: Machines you manage (not GitHub's infrastructure)
+    # Syntax: [self-hosted, label1, label2, ...]
+    # Runner must match ALL labels to be selected
+    # Why self-hosted: Custom hardware, faster builds, persistent caching, cost savings
+    # Why Linux: Docker builds typically run on Linux
+    runs-on: [self-hosted, Linux]
+
+    # Available runner labels (custom labels you set when registering runner):
+    # - self-hosted: Required for all self-hosted runners
+    # - OS: Linux, macOS, Windows
+    # - Architecture: x64, ARM64, ARM
+    # - Custom: GPU, 32gb-ram, nvme-storage, etc.
+
+    # ========================================================================
+    # PERMISSIONS (Job-level)
+    # ========================================================================
+    # Overrides workflow-level permissions for this specific job
+    # Principle of least privilege: Only grant what this job needs
+    permissions:
+      contents: read   # Read repository code for checkout
+      packages: write  # Push Docker images to GitHub Container Registry (ghcr.io)
+      # Why packages:write: Docker images are published as GitHub packages
+      # Why contents:read: Need to checkout code and Dockerfiles
+
+    steps:
+      # ----------------------------------------------------------------------
+      # FIX PERMISSIONS (Self-hosted runner issue)
+      # ----------------------------------------------------------------------
+      - name: Fix permissions
+        # Conditional execution: Only run if build should proceed
+        # Why needed: self-hosted runners may have permission issues from previous runs
+        # Problem: Previous workflows may leave files owned by root or other users
+        if: ${{ inputs.should-run }}
+        run: |
+          # chown: Change ownership to current user
+          # -R: Recursive (all files/subdirectories)
+          # $USER:$USER: Set user and group to current user
+          # github.workspace: Context variable with repository path
+          # || true: Don't fail if command errors (may not have sudo access)
+          sudo chown -R $USER:$USER ${{ github.workspace }} || true
+
+      # ----------------------------------------------------------------------
+      # CHECKOUT REPOSITORY
+      # ----------------------------------------------------------------------
+      - uses: actions/checkout@v4
+        if: ${{ inputs.should-run }}
+        with:
+          # fetch-depth: 0 means fetch ALL git history (not just latest commit)
+          # Default is 1 (shallow clone - only latest commit)
+          # Why 0: May need full history for:
+          #   - Git-based versioning (git describe, tags)
+          #   - Build timestamps from commit history
+          #   - Multi-stage builds that reference older commits
+          fetch-depth: 0
+
+      # ----------------------------------------------------------------------
+      # DISK SPACE CLEANUP
+      # ----------------------------------------------------------------------
+      - name: free up disk space
+        # Explicitly enable this for large builds
+        # Conditional: Only run if should-run AND freespace are both true
+        # Why complex condition: Allows fine-grained control over cleanup
+        if: ${{ inputs.should-run && inputs.freespace }}
+        run: |
+          # Print disk usage before cleanup for debugging
+          echo -e "pre cleanup space:\n $(df -h)"
+          # df -h: Disk free space in human-readable format (GB/TB)
+
+          # ============ Remove GitHub runner pre-installed software ============
+          # These are pre-installed on GitHub runners but not needed for Docker builds
+          # Typically frees 10-30 GB of space
+
+          sudo rm -rf /opt/ghc                     # Haskell compiler (~8GB)
+          sudo rm -rf /usr/share/dotnet            # .NET SDK (~20GB)
+          sudo rm -rf /usr/local/share/boost       # C++ Boost libraries (~1GB)
+          sudo rm -rf /usr/local/lib/android       # Android SDK (~10GB)
+
+          # ============ Clean up Docker images from deleted branches ============
+          echo "=== Cleaning images from deleted branches ==="
+
+          # Get list of all remote branches (branches that still exist on GitHub)
+          # ls-remote: List remote references
+          # --heads: Only show branches (not tags)
+          # awk: Extract branch name from output
+          # sed: Remove "refs/heads/" prefix
+          git ls-remote --heads origin | awk '{print $2}' | sed 's|refs/heads/||' > /tmp/active_branches.txt
+
+          # Check each Docker image tag against branch list
+          # docker images: List all local images
+          # --format: Custom output format (repository:tag|imageID)
+          # grep dimensionalos: Only check our images (not system images)
+          # grep -v "<none>": Skip untagged images
+          docker images --format "{{.Repository}}:{{.Tag}}|{{.ID}}" | \
+          grep "ghcr.io/dimensionalos" | \
+          grep -v ":<none>" | \
+          while IFS='|' read image_ref id; do
+            # Extract tag (branch name) from image reference
+            tag=$(echo "$image_ref" | cut -d: -f2)
+
+            # Check if branch still exists
+            if grep -qx "$tag" /tmp/active_branches.txt; then
+              echo "Branch exists: $tag - keeping $image_ref"
+            else
+              echo "Branch deleted: $tag - removing $image_ref"
+              # Remove image (|| true prevents script from failing if image is in use)
+              docker rmi "$id" 2>/dev/null || true
+            fi
+          done
+
+          rm -f /tmp/active_branches.txt
+
+          # ============ Progressive cleanup based on disk usage ============
+          # Check disk usage percentage
+          USAGE=$(df / | awk 'NR==2 {print $5}' | sed 's/%//')
+          echo "Pre-docker-cleanup disk usage: ${USAGE}%"
+
+          # Stage 1: Quick cleanup if usage > 60%
+          if [ $USAGE -gt 60 ]; then
+            echo "=== Running quick cleanup (usage > 60%) ==="
+
+            # Keep newest image per tag, remove older duplicates
+            # Why: Multiple builds of same tag create duplicate images
+            # Strategy: Sort by creation time, keep newest, delete rest
+            docker images --format "{{.Repository}}|{{.Tag}}|{{.ID}}" | \
+            grep "ghcr.io/dimensionalos" | \
+            grep -v "<none>" | \
+            while IFS='|' read repo tag id; do
+              # Get image creation timestamp
+              created_ts=$(docker inspect -f '{{.Created}}' "$id" 2>/dev/null)
+              # Convert to Unix timestamp for sorting
+              created_unix=$(date -d "$created_ts" +%s 2>/dev/null || echo "0")
+              echo "${repo}|${tag}|${id}|${created_unix}"
+            done | sort -t'|' -k1,1 -k2,2 -k4,4nr | \
+            awk -F'|' '
+            {
+              repo=$1; tag=$2; id=$3
+              repo_tag = repo ":" tag
+
+              # Skip protected tags (never delete main/dev/latest)
+              if (tag ~ /^(main|dev|latest)$/) next
+
+              # Keep newest per tag, remove older duplicates
+              if (!(repo_tag in seen_combos)) {
+                seen_combos[repo_tag] = 1  # First occurrence - keep it
+              } else {
+                system("docker rmi " id " 2>/dev/null || true")  # Duplicate - remove
+              }
+            }'
+
+            # Prune: Remove dangling images (untagged layers)
+            docker image prune -f   # -f: Force (no confirmation)
+            docker volume prune -f  # Also remove unused volumes
+          fi
+
+          # Stage 2: Aggressive cleanup if still above 85%
+          USAGE=$(df / | awk 'NR==2 {print $5}' | sed 's/%//')
+          if [ $USAGE -gt 85 ]; then
+            echo "=== AGGRESSIVE cleanup (usage > 85%) - removing all except main/dev ==="
+
+            # Remove ALL images except main and dev tags
+            # Why so aggressive: Out of disk space - must free up room or build will fail
+            # Protected tags: main, dev (core development branches)
+            docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | \
+            grep -E "ghcr.io/dimensionalos" | \
+            grep -vE ":(main|dev)$" | \
+            awk '{print $2}' | xargs -r docker rmi -f || true
+            # xargs -r: Only run if there's input (-r = --no-run-if-empty)
+
+            # Prune everything
+            docker container prune -f  # Remove stopped containers
+            docker volume prune -a -f  # Remove all unused volumes (-a = all)
+            docker network prune -f    # Remove unused networks
+            docker image prune -f      # Remove dangling images
+          fi
+
+          echo -e "post cleanup space:\n $(df -h)"
+
+      # ----------------------------------------------------------------------
+      # DOCKER LOGIN (GitHub Container Registry)
+      # ----------------------------------------------------------------------
+      - uses: docker/login-action@v3
+        if: ${{ inputs.should-run }}
+        with:
+          # registry: Docker registry to authenticate with
+          # ghcr.io: GitHub Container Registry (stores Docker images as GitHub packages)
+          # Alternatives: docker.io (Docker Hub), gcr.io (Google), etc.
+          registry: ghcr.io
+
+          # username: GitHub username for authentication
+          # github.actor: Context variable with the user who triggered the workflow
+          username: ${{ github.actor }}
+
+          # password: Authentication token
+          # GITHUB_TOKEN: Auto-generated token with permissions from job permissions
+          # Why use GITHUB_TOKEN: No need to create separate secrets, auto-scoped
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------------------------------------
+      # SETUP GITHUB CACHE FOR DOCKER LAYERS
+      # ----------------------------------------------------------------------
+      # Why layer caching: Docker builds are slow (package installs, compilation)
+      # Caching layers speeds up subsequent builds (only rebuild changed layers)
+      # GitHub Actions cache: Free cache storage (10 GB per repo)
+
+      - uses: crazy-max/ghaction-github-runtime@v3
+        if: ${{ inputs.should-run }}
+        # Purpose: Sets environment variables for GitHub Actions cache
+        # Required by: docker/build-push-action for cache-to/cache-from
+
+      - uses: docker/setup-buildx-action@v3
+        if: ${{ inputs.should-run }}
+        with:
+          # driver: docker-container (BuildKit in a container, more features)
+          # Alternative: docker (classic builder), kubernetes (for K8s)
+          # Why docker-container: Supports advanced features like cache backends
+          driver: docker-container
+
+          # install: true (make buildx the default docker builder)
+          # Why: Ensures subsequent docker build commands use buildx
+          install: true
+
+          # use: true (set this builder as the active builder)
+          # Why: Multiple builders can exist, this selects which one to use
+          use: true
+
+      # ----------------------------------------------------------------------
+      # BUILD AND PUSH DOCKER IMAGE
+      # ----------------------------------------------------------------------
+      - uses: docker/build-push-action@v6
+        if: ${{ inputs.should-run }}
+        with:
+          # push: true (push image to registry after building)
+          # Alternative: push: false (build only, don't publish)
+          # Why true: CI workflows typically build and publish automatically
+          push: true
+
+          # context: Build context directory (root for Dockerfile COPY commands)
+          # Default '.': Repository root
+          # All COPY/ADD paths in Dockerfile are relative to this directory
+          context: ${{ inputs.context }}
+
+          # file: Path to Dockerfile (relative to repository root)
+          # Constructed from input: docker/{dockerfile}/Dockerfile
+          # Example: inputs.dockerfile = "dev" -> docker/dev/Dockerfile
+          file: docker/${{ inputs.dockerfile }}/Dockerfile
+
+          # tags: Image name and tags to apply
+          # Format: registry/owner/image:tag
+          # Example: ghcr.io/dimensionalos/dev:latest
+          # Can specify multiple tags: tags: | (YAML multiline string)
+          #   ghcr.io/user/app:latest
+          #   ghcr.io/user/app:1.0.0
+          tags: ${{ inputs.to-image }}
+
+          # cache-from: Where to pull cached layers from (speeds up builds)
+          # type=gha: GitHub Actions cache
+          # scope: Cache key namespace (separate cache for each Dockerfile)
+          # Why scope by dockerfile: Different images have different layers
+          cache-from: type=gha,scope=${{ inputs.dockerfile }}
+
+          # cache-to: Where to save built layers for future use
+          # mode=max: Cache all layers (not just final image)
+          # Alternative: mode=min (only cache final image layers)
+          # Why max: Better cache hit rate for incremental changes
+          cache-to: type=gha,mode=max,scope=${{ inputs.dockerfile }}
+
+          # Alternative caching strategy (commented out):
+          # Scope by both dockerfile AND base image
+          # Why useful: If base image changes, invalidate cache
+          # Why commented: Simpler cache key is usually sufficient
+          #cache-from: type=gha,scope=${{ inputs.dockerfile }}-${{ inputs.from-image }}
+          #cache-to: type=gha,mode=max,scope=${{ inputs.dockerfile }}-${{ inputs.from-image }}
+
+          # build-args: Pass arguments to Dockerfile (like function parameters)
+          # ARG in Dockerfile: ARG FROM_IMAGE
+          # Allows dynamic Dockerfile based on inputs
+          # Example: FROM ${FROM_IMAGE} in Dockerfile uses this value
+          build-args: FROM_IMAGE=${{ inputs.from-image }}
+
+# ============================================================================
+# HOW TO CALL THIS WORKFLOW FROM ANOTHER WORKFLOW
+# ============================================================================
+# Example from docker.yml:
+#
+# jobs:
+#   dev:
+#     uses: ./.github/workflows/_docker-build-template.yml  # Path to this file
+#     with:  # Pass inputs
+#       should-run: true
+#       from-image: ghcr.io/dimensionalos/python:dev
+#       to-image: ghcr.io/dimensionalos/dev:dev
+#       dockerfile: dev
+#       freespace: true
+#     secrets: inherit  # Pass all secrets to reusable workflow
+#
+# ============================================================================
+# BENEFITS OF REUSABLE WORKFLOWS
+# ============================================================================
+# 1. DRY (Don't Repeat Yourself): Write once, use many times
+# 2. Consistency: All builds use same logic
+# 3. Maintenance: Update once, all callers benefit
+# 4. Testing: Test template once, confident in all uses
+# 5. Readability: Calling workflow is simpler (less noise)

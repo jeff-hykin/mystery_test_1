@@ -34,8 +34,18 @@ jobs:
           if [ "$(uname)" = "Darwin" ]; then
             # install brew
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            echo '#'
+            echo '#'
+            echo '#'
+            echo '#'
+            echo '#'
             brew --prefix
             uv run python -c "import platform,sys; print(platform.machine()); print(sys.executable)"
+            echo '#'
+            echo '#'
+            echo '#'
+            echo '#'
+            echo '#'
             brew install gnu-sed portaudio git-lfs libjpeg-turbo
             export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
             # export ARCHFLAGS="-arch $(uname -m)"
