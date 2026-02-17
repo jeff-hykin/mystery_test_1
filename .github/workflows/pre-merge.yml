@@ -34,11 +34,9 @@ jobs:
           # if macos
           if [ "$(uname)" = "Darwin" ]; then
             # because we add "-march=native" in setup.py and there's a compiler arg issue with that on macos arm
-            target="$(uname -m)"
-            target="arm64"
-            export ARCHFLAGS="-arch $target"
-            export CXXFLAGS="-Xclang -target-cpu -Xclang $target"
-            export CFLAGS="-Xclang -target-cpu -Xclang $target"
+            export ARCHFLAGS="-arch $(uname -m)"
+            # export CXXFLAGS="-Xclang -target-cpu -Xclang $target"
+            # export CFLAGS="-Xclang -target-cpu -Xclang $target"
             # install brew
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             brew install gnu-sed portaudio git-lfs libjpeg-turbo pre-commit
