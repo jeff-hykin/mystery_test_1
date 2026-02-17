@@ -56,7 +56,7 @@ jobs:
 
               echo
               echo "================ PYTHON RUNTIME VIEW ================"
-              uv run -c "import platform, sys, struct, sysconfig; \
+              uv run python -c "import platform, sys, struct, sysconfig; \
               print('platform.machine() =', platform.machine()); \
               print('platform.platform() =', platform.platform()); \
               print('sys.executable =', sys.executable); \
