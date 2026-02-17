@@ -78,7 +78,7 @@ jobs:
             echo '#'
             brew install gnu-sed portaudio git-lfs libjpeg-turbo
             export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
-            # export ARCHFLAGS="-arch $(uname -m)"
+            export ARCHFLAGS="arm64"
           # if ubuntu
           else
             sudo apt-get update
