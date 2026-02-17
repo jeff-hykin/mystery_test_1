@@ -42,6 +42,99 @@ jobs:
             # install brew
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             brew install gnu-sed portaudio git-lfs libjpeg-turbo pre-commit
+            echo "================ HOST INFO ================"
+            uname -a
+            echo "uname -m: $(uname -m)"
+            echo "Rosetta translated (1=yes, 0=no):"
+            sysctl -n sysctl.proc_translated 2>/dev/null || echo "not supported"
+
+            echo
+            echo "================ PYTHON DISCOVERY ================"
+            echo "which python:"
+            which python 2>/dev/null || echo "python not found"
+            echo "which python3:"
+            which python3 2>/dev/null || echo "python3 not found"
+            echo "all python3 in PATH:"
+            which -a python3 2>/dev/null || true
+
+            echo
+            echo "================ PYTHON RUNTIME VIEW ================"
+            python3 -c "import platform, sys, struct, sysconfig; \
+            print('platform.machine() =', platform.machine()); \
+            print('platform.platform() =', platform.platform()); \
+            print('sys.executable =', sys.executable); \
+            print('sys.version =', sys.version.replace('\n',' ')); \
+            print('pointer_bits =', struct.calcsize('P')*8); \
+            print('sysconfig platform =', sysconfig.get_platform()); \
+            print('CC =', sysconfig.get_config_var('CC')); \
+            print('CFLAGS =', sysconfig.get_config_var('CFLAGS')); \
+            print('LDSHARED =', sysconfig.get_config_var('LDSHARED'))"
+
+            PYEXE=$(python3 -c "import sys; print(sys.executable)")
+            echo
+            echo "================ PYTHON MACH-O INFO ================"
+            echo "Executable: $PYEXE"
+            ls -la "$PYEXE"
+            file "$PYEXE"
+            echo "lipo -archs:"
+            lipo -archs "$PYEXE" 2>/dev/null || echo "not universal or lipo failed"
+            echo "Mach-O header:"
+            otool -hv "$PYEXE" 2>/dev/null || true
+            echo "Linked libraries:"
+            otool -L "$PYEXE" 2>/dev/null || true
+
+            echo
+            echo "================ ENV FLAGS (possible arch pollution) ================"
+            env | grep -E '^(ARCHFLAGS|CFLAGS|CXXFLAGS|LDFLAGS|SDKROOT|MACOSX_DEPLOYMENT_TARGET|CMAKE_OSX_ARCHITECTURES|_PYTHON_HOST_PLATFORM|UV_.*)=' || echo "No suspicious env flags found"
+
+            echo
+            echo "================ CLANG INFO ================"
+            echo "clang location:"
+            xcrun --find clang
+            echo "clang version:"
+            xcrun clang --version
+
+            echo
+            echo "clang default target:"
+            xcrun clang -v -E - </dev/null 2>&1
+
+            echo
+            echo "clang registered targets:"
+            xcrun clang -print-targets 2>/dev/null || echo "print-targets not supported"
+
+            echo
+            echo "================ CLANG TEST COMPILE ================"
+            TMPDIR=$(mktemp -d)
+            echo "int main(){return 0;}" > "$TMPDIR/t.c"
+
+            echo
+            echo "Default compile:"
+            xcrun clang -c "$TMPDIR/t.c" -o "$TMPDIR/default.o"
+            file "$TMPDIR/default.o"
+
+            echo
+            echo "Try ARM64 compile:"
+            xcrun clang -target arm64-apple-macos13 -c "$TMPDIR/t.c" -o "$TMPDIR/arm64.o" 2>&1
+            file "$TMPDIR/arm64.o" 2>/dev/null || echo "arm64 compile failed"
+
+            echo
+            echo "Try x86_64 compile:"
+            xcrun clang -target x86_64-apple-macos13 -c "$TMPDIR/t.c" -o "$TMPDIR/x86_64.o" 2>&1
+            file "$TMPDIR/x86_64.o" 2>/dev/null || echo "x86_64 compile failed"
+
+            echo
+            echo "================ SDK INFO ================"
+            echo "SDK path:"
+            xcrun --sdk macosx --show-sdk-path
+            echo "SDK version:"
+            xcrun --sdk macosx --show-sdk-version 2>/dev/null || true
+            echo "Xcode path:"
+            xcode-select -p 2>/dev/null || true
+
+            rm -rf "$TMPDIR"
+
+            echo
+            echo "================ END DIAGNOSTIC ================"
             export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
           # if ubuntu
           else
