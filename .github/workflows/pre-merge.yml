@@ -35,6 +35,7 @@ jobs:
             # install brew
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             brew --prefix
+            uv run python -c "import platform,sys; print(platform.machine()); print(sys.executable)"
             brew install gnu-sed portaudio git-lfs libjpeg-turbo
             export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
             # export ARCHFLAGS="-arch $(uname -m)"
