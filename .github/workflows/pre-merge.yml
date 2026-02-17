@@ -33,6 +33,9 @@ jobs:
         run: |
           # if macos
           if [ "$(uname)" = "Darwin" ]; then
+            uv run python -c "import platform,sys; print(platform.machine()); print(sys.executable)"
+            file "$(uv run python -c 'import sys; print(sys.executable)')"
+            python3 -c "import sysconfig; print(sysconfig.get_config_var('CFLAGS'))"
             # because we add "-march=native" in setup.py and there's a compiler arg issue with that on macos arm
             export ARCHFLAGS="-arch $(uname -m)"
             export CFLAGS="-O3 -march=armv8-a"
