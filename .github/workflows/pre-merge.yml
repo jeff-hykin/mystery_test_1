@@ -56,7 +56,7 @@ jobs:
 
               echo
               echo "================ PYTHON RUNTIME VIEW ================"
-              python3 -c "import platform, sys, struct, sysconfig; \
+              uv python -c "import platform, sys, struct, sysconfig; \
               print('platform.machine() =', platform.machine()); \
               print('platform.platform() =', platform.platform()); \
               print('sys.executable =', sys.executable); \
@@ -67,10 +67,10 @@ jobs:
               print('CFLAGS =', sysconfig.get_config_var('CFLAGS')); \
               print('LDSHARED =', sysconfig.get_config_var('LDSHARED'))"
 
-              PYEXE=$(python3 -c "import sys; print(sys.executable)")
+              PYEXE=$(uv python3 -c "import sys; print(sys.executable)")
               echo
               echo "================ PYTHON MACH-O INFO ================"
-              echo "Executable:"
+              echo "Executable: $PYEXE"
             echo '#'
             echo '#'
             echo '#'
