@@ -36,18 +36,18 @@ jobs:
 
       - name: Follow Development Install and Test
         run: |
-          uv sync --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
+          time uv sync --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
 
           # Run mypy check for multiple Python versions
-          uv run mypy --python-version 3.10 dimos
-          uv run mypy --python-version 3.12 dimos
+          time uv run mypy --python-version 3.10 dimos
+          time uv run mypy --python-version 3.12 dimos
           
           # check blueprint before other tests
-          uv run pytest dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current
+          time uv run pytest dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current
 
           echo "# "
           echo "# "
           echo "# pytest fast"
           echo "# "
           echo "# "
-          uv run bin/pytest-fast
+          time uv run bin/pytest-fast
