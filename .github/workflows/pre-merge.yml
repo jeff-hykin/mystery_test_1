@@ -56,12 +56,16 @@ jobs:
 
               echo
               echo "================ PYTHON RUNTIME VIEW ================"
-              # python3 -c "import platform, sys, struct, sysconfig; \
-              # print('platform.machine() =', platform.machine()); \
-              # print('platform.platform() =', platform.platform()); \
-              # print('sys.executable =', sys.executable); \
-              # print('sys.version =', sys.version.replace('\n',' ')); \
-              # print('pointer_bits =', struct.calcsize('P')*8); print('sysconfig platform =', sysconfig.get_platform()); print('CC =', sysconfig.get_config_var('CC')); print('CFLAGS =', sysconfig.get_config_var('CFLAGS')); print('LDSHARED =', sysconfig.get_config_var('LDSHARED'))"
+              python3 -c "import platform, sys, struct, sysconfig; \
+              print('platform.machine() =', platform.machine()); \
+              print('platform.platform() =', platform.platform()); \
+              print('sys.executable =', sys.executable); \
+              print('sys.version =', sys.version.replace('\n',' ')); \
+              print('pointer_bits =', struct.calcsize('P')*8); \
+              print('sysconfig platform =', sysconfig.get_platform()); \
+              print('CC =', sysconfig.get_config_var('CC')); \
+              print('CFLAGS =', sysconfig.get_config_var('CFLAGS')); \
+              print('LDSHARED =', sysconfig.get_config_var('LDSHARED'))"
 
               PYEXE=$(python3 -c "import sys; print(sys.executable)")
               echo
@@ -74,7 +78,7 @@ jobs:
             echo '#'
             brew install gnu-sed portaudio git-lfs libjpeg-turbo
             export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
-            export ARCHFLAGS="arm64"
+            # export ARCHFLAGS="-arch $(uname -m)"
           # if ubuntu
           else
             sudo apt-get update
