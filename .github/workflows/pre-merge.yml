@@ -33,7 +33,8 @@ jobs:
           if [ "$(uname)" = "Darwin" ]; then
             # install brew
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            brew install gnu-sed gcc portaudio git-lfs libjpeg-turbo python
+            brew install gnu-sed portaudio git-lfs libjpeg-turbo
+            export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
             # export ARCHFLAGS="-arch $(uname -m)"
           # if ubuntu
           else
