@@ -34,20 +34,6 @@ jobs:
             python3-dev \
             pre-commit
 
-      - name: Follow Development Install and Test
+      - name: Install and run tests
         run: |
-          time uv sync --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
-
-          # Run mypy check for multiple Python versions
-          time uv run mypy --python-version 3.10 dimos
-          time uv run mypy --python-version 3.12 dimos
-          
-          # check blueprint before other tests
-          time uv run pytest dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current
-
-          echo "# "
-          echo "# "
-          echo "# pytest fast"
-          echo "# "
-          echo "# "
-          time uv run bin/pytest-fast
+          bin/ci-fast
