@@ -11,7 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  # use as many caches as possible for the quick run
   quick-test:
     runs-on: ubuntu-24.04
     steps:
@@ -43,128 +42,45 @@ jobs:
             uv-${{ runner.os }}-py312-
             uv-${{ runner.os }}-
 
-      - name: Cache pre-commit environments
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-py312-${{ hashFiles('dimos/.pre-commit-config.yaml') }}
-          restore-keys: |
-            pre-commit-${{ runner.os }}-py312-
-            pre-commit-${{ runner.os }}-
-
-      - name: Cache virtualenv (best-effort)
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-py312-${{ hashFiles('dimos/**/pyproject.toml', 'dimos/**/setup.py', 'dimos/**/requirements*.txt') }}
-          restore-keys: |
-            venv-${{ runner.os }}-py312-
-            venv-${{ runner.os }}-
-
-      - name: Cache dimos git repository
-        uses: actions/cache@v4
-        with:
-          path: dimos
-          key: dimos-git
-          restore-keys: |
-            dimos-git
-
-      - name: Quickstart install and test
+      - name: Follow Development Install and Test
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           # if uv not here, get it
-          if ! [ -n "$(command -v "uv")" ]; then
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-          fi
-
-          export GIT_LFS_SKIP_SMUDGE=1
-          git lfs install
+          curl -LsSf https://astral.sh/uv/install.sh | sh
         
-          if ![ -d ".venv" ]; then
-            uv venv
-          fi
+          uv venv
           . .venv/bin/activate
 
-          # Quick case: if dimos exists, just pull
-          if [ -d "dimos/.git" ]; then
-            cd dimos
-            git checkout dev
-            git pull
-          else
-            git clone https://github.com/dimensionalOS/dimos.git
-            cd dimos
-            git checkout dev
-          fi
+          git clone https://github.com/dimensionalOS/dimos.git
+          cd dimos
+          git checkout dev
 
           uv pip install -e '.[base,dev,manipulation,misc,unitree,drone]'
-          # uv pip install "dimos[base,dev,manipulation,misc,unitree,drone] @ git+https://github.com/dimensionalOS/dimos.git@dev"
-          pre-commit install
-
-          # Run mypy check for multiple Python versions
-          uv run mypy --python-version 3.10 dimos
-          uv run mypy --python-version 3.12 dimos
-
-          # Run fast tests
-          ./bin/pytest-fast | tee pytest-fast.log
-          grep -q "FAILED" pytest-fast.log
           
-  slow-test:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Ubuntu system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            curl \
-            g++ \
-            portaudio19-dev \
-            git-lfs \
-            libturbojpeg \
-            python3-dev \
-            pre-commit
-
-      - name: Quickstart install and test (no cache)
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          # if uv not here, get it
-          if ! [ -n "$(command -v "uv")" ]; then
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-          fi
-
-          export GIT_LFS_SKIP_SMUDGE=1
-          git lfs install
-        
-          if ![ -d ".venv" ]; then
-            uv venv
-          fi
-          . .venv/bin/activate
-
-          # Quick case: if dimos exists, just pull
-          if [ -d "dimos/.git" ]; then
-            cd dimos
-            git checkout dev
-            git pull
-          else
-            git clone https://github.com/dimensionalOS/dimos.git
-            cd dimos
-            git checkout dev
-          fi
-
-          uv pip install -e '.[base,dev,manipulation,misc,unitree,drone]'
-          # uv pip install "dimos[base,dev,manipulation,misc,unitree,drone] @ git+https://github.com/dimensionalOS/dimos.git@dev"
-          pre-commit install
-
+          # FIXME:
+          pytest dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current
+          
           # Run mypy check for multiple Python versions
           uv run mypy --python-version 3.10 dimos
           uv run mypy --python-version 3.12 dimos
-
-          # Run fast tests
-          ./bin/pytest-fast | tee pytest-fast.log
-          grep -q "FAILED" pytest-fast.log
+          
+          
+          echo "# "
+          echo "# "
+          echo "# pytest fast"
+          echo "# "
+          echo "# "
+          bin/pytest-fast | tee pytest-fast.log
+          echo "exit code $?"
+          # if there's any failure 
+          grep -q "FAILED" pytest-fast.log && exit 1
+          
+        #   echo "# "
+        #   echo "# "
+        #   echo "# pytest slow"
+        #   echo "# "
+        #   echo "# "
+        #   pytest dimos | tee pytest-fast.log
+        #   echo "exit code $?"
+        #   # if there's any failure 
+        #   grep -q "FAILED" pytest-fast.log && exit 1
