@@ -28,8 +28,8 @@ jobs:
         run: |
           if [ "$(uname)" = "Darwin" ]; then
             # Set the environment variables to pass the correct flags to clang/clang++
-            export CXXFLAGS="-Xclang -target-cpu -Xclang arm64"
-            export CFLAGS="-Xclang -target-cpu -Xclang arm64"
+            export CXXFLAGS="-Xclang -target-cpu -Xclang apple-m3"
+            export CFLAGS="-Xclang -target-cpu -Xclang apple-m3"
             echo "================ HOST INFO ================"
             uname -a
             echo "uname -m: $(uname -m)"
