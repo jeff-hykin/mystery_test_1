@@ -27,6 +27,8 @@ jobs:
       - name: Install System dependencies
         run: |
           if [ "$(uname)" = "Darwin" ]; then
+            export CFLAGS="-target-cpu arm64"
+            export CXXFLAGS="-target-cpu arm64"
             echo "================ HOST INFO ================"
             uname -a
             echo "uname -m: $(uname -m)"
