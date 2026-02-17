@@ -2,16 +2,13 @@
   description = "Project dev environment as Nix shell + DockerTools layered image";
 
   inputs = {
-    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-25.11";
-    home-manager.url = "github:nix-community/home-manager/release-25.11";
-    home-manager.inputs.nixpkgs.follows = "nixpkgs";
+    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url  = "github:numtide/flake-utils";
     lib.url          = "github:jeff-hykin/quick-nix-toolkits";
     lib.inputs.flakeUtils.follows = "flake-utils";
     xome.url         = "github:jeff-hykin/xome";
-    xome.inputs.nixpkgs.follows      = "nixpkgs";
-    xome.inputs.flake-utils.follows  = "flake-utils";
-    xome.inputs.home-manager.follows = "home-manager";
+    xome.inputs.nixpkgs.follows    = "nixpkgs";
+    xome.inputs.flake-utils.follows = "flake-utils";
     diagon.url       = "github:petertrotman/nixpkgs/Diagon";
   };
 
@@ -31,10 +28,11 @@
           { vals.pkg=pkgs.gh;                 flags={}; }
           { vals.pkg=pkgs.stdenv.cc.cc.lib;   flags.ldLibraryGroup=true; }
           { vals.pkg=pkgs.stdenv.cc;          flags.ldLibraryGroup=true; }
+          { vals.pkg=pkgs.gfortran.cc.lib;    flags.ldLibraryGroup=true; }
           { vals.pkg=pkgs.cctools;            flags={}; onlyIf=pkgs.stdenv.isDarwin; } # for pip install opencv-python
           { vals.pkg=pkgs.pcre2;              flags={ ldLibraryGroup=pkgs.stdenv.isDarwin; packageConfGroup=pkgs.stdenv.isDarwin; }; }
           { vals.pkg=pkgs.libsysprof-capture; flags.packageConfGroup=true; onlyIf=pkgs.stdenv.isDarwin; }
-          { vals.pkg=pkgs.xcbuild;            flags={}; onlyIf=pkgs.stdenv.isDarwin; }
+          { vals.pkg=pkgs.xcbuild;            flags={}; }
           { vals.pkg=pkgs.git-lfs;            flags={}; }
           { vals.pkg=pkgs.gnugrep;            flags={}; }
           { vals.pkg=pkgs.gnused;             flags={}; }
@@ -131,6 +129,7 @@
           { vals.pkg=pkgs.libjpeg;       flags.ldLibraryGroup=true; }
           { vals.pkg=pkgs.libjpeg_turbo; flags.ldLibraryGroup=true; }
           { vals.pkg=pkgs.libpng;        flags={}; }
+          { vals.pkg=pkgs.libidn2;       flags.ldLibraryGroup=true; }
 
           ### Docs generators
           { vals.pkg=pkgs.pikchr;        flags={}; }
@@ -168,6 +167,7 @@
                     }
             );
           }
+          { vals.pkg=pkgs.cyclonedds; flags.ldLibraryGroup=true; flags.packageConfGroup=true; }
         ];
 
         # ------------------------------------------------------------
@@ -193,19 +193,16 @@
             strAppend="/lib/python3.${aggregation.mergedVals.pythonMinorVersion}/site-packages";
             strJoin=":";
         });
-        groups = {
-            inherit ldLibraryPackages giTypelibPackagesString packageConfPackagesString manualPythonPackages;
-        };
-    
+
         # ------------------------------------------------------------
         # 3. Host interactive shell  →  `nix develop`
         # ------------------------------------------------------------
-        envVarsShellHook = ''
+        shellHook = ''
           shopt -s nullglob 2>/dev/null || setopt +o nomatch 2>/dev/null || true # allow globs to be empty without throwing an error
           if [ "$OSTYPE" = "linux-gnu" ]; then
             export CC="cc-no-usr-include" # basically patching for nix
             # Create nvidia-only lib symlinks to avoid glibc conflicts
-            NVIDIA_LIBS_DIR="/tmp/nix-nvidia-libs-$$"
+            NVIDIA_LIBS_DIR="/tmp/nix-nvidia-libs"
             mkdir -p "$NVIDIA_LIBS_DIR"
             for lib in /usr/lib/libcuda.so* /usr/lib/libnvidia*.so* /usr/lib/x86_64-linux-gnu/libnvidia*.so*; do
               [ -e "$lib" ] && ln -sf "$lib" "$NVIDIA_LIBS_DIR/" 2>/dev/null
@@ -217,12 +214,11 @@
           export GI_TYPELIB_PATH="${giTypelibPackagesString}:$GI_TYPELIB_PATH"
           export PKG_CONFIG_PATH=${lib.escapeShellArg packageConfPackagesString}
           export PYTHONPATH="$PYTHONPATH:"${lib.escapeShellArg manualPythonPackages}
+          export CYCLONEDDS_HOME="${pkgs.cyclonedds}"
+          export CMAKE_PREFIX_PATH="${pkgs.cyclonedds}:$CMAKE_PREFIX_PATH"
           # CC, CFLAGS, and LDFLAGS are bascially all for `pip install pyaudio`
           export CFLAGS="$(pkg-config --cflags portaudio-2.0) $CFLAGS"
           export LDFLAGS="-L$(pkg-config --variable=libdir portaudio-2.0) $LDFLAGS"
-        '';
-        shellHook = ''
-          ${envVarsShellHook}
 
           # without this alias, the pytest uses the non-venv python and fails
           alias pytest="python -m pytest"
@@ -231,42 +227,9 @@
           if [ -f "$PROJECT_ROOT/env/bin/activate" ]; then
             . "$PROJECT_ROOT/env/bin/activate"
           fi
-          cd "$PROJECT_ROOT"
 
-          #
-          # python & setup
-          #
-          if [ -f "$PROJECT_ROOT/venv/bin/activate" ]; then
-            # if there is a venv, load it
-            _nix_python_path="$(realpath "$(which python)")"
-            . "$PROJECT_ROOT/venv/bin/activate"
-            # check the venv to make sure it wasn't created with a different (non nix) python
-            if [ "$_nix_python_path" != "$(realpath "$(which python)")" ]
-            then
-              echo
-              echo
-              echo "WARNING:"
-              echo "     Your venv was created with something other than the current nix python"
-              echo "     This could happen if you made the venv before doing `nix develop`"
-              echo "     It could also happen if the nix-python was updated but the venv wasn't"
-              echo "     WHAT YOU NEED TO DO:"
-              echo "     - If you're about to make/test a PR, delete/rename your venv and run `nix develop` again"
-              echo "     - If you're just trying to get the code working, you can continue but you might get bugs FYI"
-              echo
-              echo
-              echo "Got it? (press enter)"; read _
-              echo
-            fi
-          else
-            #
-            # automate the readme
-            #
-            cyan="$(printf '%b' "\e[0;36m")"
-            color_reset="$(printf '%b' "\e[0m")"
-            echo
-            echo "I don't see a venv directory"
-            echo "If you'd like me to setup the project for you, run: $cyan bin/_dev_init $color_reset"
-          fi
+          [ -f "$PROJECT_ROOT/motd" ] && cat "$PROJECT_ROOT/motd"
+          [ -f "$PROJECT_ROOT/.pre-commit-config.yaml" ] && [ ! -f "$PROJECT_ROOT/.git/hooks/pre-commit" ] && pre-commit install --install-hooks
         '';
         devShells = {
           # basic shell (blends with your current environment)
@@ -335,14 +298,6 @@
         };
 
       in {
-        # for re-use in other flakes
-        vars = {
-            inherit devPackages groups aggregation lib;
-            # what other flakes will use
-            shellHook = envVarsShellHook;
-            # what someone would use if they weren't really managing their own project
-            fullShell = shellHook;
-        };
         ## Local dev shell
         devShells = devShells;
 
