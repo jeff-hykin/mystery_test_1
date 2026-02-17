@@ -1,0 +1,6 @@
+- pre-merge uses docker
+- post-merge uses new ci-fast
+    - blueprints check runs first: `dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current`
+- markdown runs doclink
+- uv sync --freeze inside of ros
+- ci run for macos (add brew commands)

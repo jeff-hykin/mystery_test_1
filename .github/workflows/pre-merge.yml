@@ -12,7 +12,11 @@ permissions:
 
 jobs:
   pytest_fast:
-    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,17 +26,26 @@ jobs:
           enable-cache: true
           python-version: "3.12"
 
-      - name: Install Ubuntu system dependencies
+      - name: Install System dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            curl \
-            g++ \
-            portaudio19-dev \
-            git-lfs \
-            libturbojpeg \
-            python3-dev \
-            pre-commit
+          # if macos
+          if [ "$(uname)" = "Darwin" ]; then
+            # install brew
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            brew install gnu-sed gcc portaudio git-lfs libjpeg-turbo python
+            export ARCHFLAGS="-arch $(uname -m)"
+          # if ubuntu
+          else
+            sudo apt-get update
+            sudo apt-get install -y \
+              curl \
+              g++ \
+              portaudio19-dev \
+              git-lfs \
+              libturbojpeg \
+              python3-dev \
+              pre-commit
+          fi
 
       - name: Install and run tests
         run: |
