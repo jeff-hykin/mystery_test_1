@@ -25,18 +25,20 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: true
           python-version: "3.12"
-          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-py3.12
+          # enable-cache: true
+          # cache-suffix: ${{ runner.os }}-${{ runner.arch }}-py3.12
 
       - name: Install System dependencies
         run: |
           # if macos
           if [ "$(uname)" = "Darwin" ]; then
             echo "stuff"
-            echo "stuff"
+            echo "stuff1"
             uv run python -c "import platform,sys; print(platform.machine()); print(sys.executable)"
+            echo "stuff2"
             file "$(uv run python -c 'import sys; print(sys.executable)')"
+            echo "stuff3"
             python3 -c "import sysconfig; print(sysconfig.get_config_var('CFLAGS'))"
             echo "stuff"
             echo "stuff"
