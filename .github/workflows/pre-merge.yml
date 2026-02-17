@@ -36,10 +36,7 @@ jobs:
 
       - name: Follow Development Install and Test
         run: |
-          SECONDS=0
-
           uv sync --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
-
 
           # Run mypy check for multiple Python versions
           uv run mypy --python-version 3.10 dimos
@@ -54,11 +51,3 @@ jobs:
           echo "# "
           echo "# "
           uv run bin/pytest-fast
-          TEST_EXIT_CODE=$?
-
-          echo ""
-          echo "==================================="
-          echo "Total test time: ${SECONDS}s"
-          echo "==================================="
-
-          exit $TEST_EXIT_CODE
