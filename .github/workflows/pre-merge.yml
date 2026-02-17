@@ -67,7 +67,7 @@ jobs:
               print('CFLAGS =', sysconfig.get_config_var('CFLAGS')); \
               print('LDSHARED =', sysconfig.get_config_var('LDSHARED'))"
 
-              PYEXE=$(uv python3 -c "import sys; print(sys.executable)")
+              PYEXE=$(uv run python -c "import sys; print(sys.executable)")
               echo
               echo "================ PYTHON MACH-O INFO ================"
               echo "Executable: $PYEXE"
