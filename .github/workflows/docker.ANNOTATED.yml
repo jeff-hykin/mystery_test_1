@@ -1,0 +1,526 @@
+# ============================================================================
+# DOCKER BUILD AND TEST WORKFLOW
+# ============================================================================
+# Purpose: Build Docker images and run tests when code changes
+# Strategy: Build only what changed (intelligent dependency tracking)
+# Architecture: Multi-stage builds (base -> language -> dev -> tests)
+# Why complex: Optimizes CI time by skipping unnecessary builds
+name: docker
+
+# ============================================================================
+# TRIGGER EVENTS
+# ============================================================================
+on:
+  push:
+    branches:
+      # Only trigger on pushes to these branches
+      # Why main: Production deployments
+      # Why dev: Development testing
+      # Why not others: Save CI resources, feature branches use PR checks
+      - main
+      - dev
+
+    paths-ignore:
+      # Don't trigger if only documentation changed
+      # Glob pattern: '**.md' matches any .md file in any directory
+      # Why: Markdown changes don't affect Docker images
+      # Other common ignores: '**.txt', 'docs/**', 'LICENSE', 'README.*'
+      - '**.md'
+
+  pull_request:
+    # Run on all PRs (any target branch)
+    # Why no branch filter: Want to test all PRs
+    paths-ignore:
+      - '**.md'  # Skip if only docs changed
+
+# ============================================================================
+# PERMISSIONS
+# ============================================================================
+permissions:
+  contents: read       # Read repository code
+  packages: write      # Push Docker images to GHCR
+  pull-requests: read  # Read PR information for path filtering
+
+# ============================================================================
+# JOBS
+# ============================================================================
+# Job dependency graph (needs):
+#   check-changes (always runs first)
+#        ├─> ros -> ros-python -> ros-dev -> run-ros-tests
+#        ├─> python -> dev ─┬-> run-tests
+#        │                  ├-> run-heavy-tests
+#        │                  ├-> run-lcm-tests
+#        │                  └-> run-integration-tests
+#        └─> inspect-needs (debugging)
+jobs:
+  # ==========================================================================
+  # JOB: CHECK-CHANGES
+  # ==========================================================================
+  # Purpose: Determine which Docker images need rebuilding
+  # Why: Only rebuild changed components (saves 10-60 minutes per build)
+  # How: Uses path filtering to detect file changes
+  check-changes:
+    runs-on: [self-hosted, Linux]
+
+    # outputs: Values this job exports for use in dependent jobs
+    # Syntax: ${{ needs.check-changes.outputs.ros }}
+    outputs:
+      ros:    ${{ steps.filter.outputs.ros }}      # 'true' if ROS files changed
+      python: ${{ steps.filter.outputs.python }}   # 'true' if Python files changed
+      dev:    ${{ steps.filter.outputs.dev }}      # 'true' if dev files changed
+      tests:  ${{ steps.filter.outputs.tests }}    # 'true' if test files changed
+      branch-tag: ${{ steps.set-tag.outputs.branch_tag }}  # Image tag based on branch
+
+    steps:
+      # Fix permissions on self-hosted runner
+      - name: Fix permissions
+        run: |
+          sudo chown -R $USER:$USER ${{ github.workspace }} || true
+
+      # Checkout code for path filtering
+      - uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------------
+      # PATH FILTERING (Detect what changed)
+      # ----------------------------------------------------------------------
+      - id: filter
+        # ID allows referencing outputs: steps.filter.outputs.ros
+        uses: dorny/paths-filter@v3
+        # Purpose: Check which files changed and set boolean outputs
+        # How: Compares current commit against base commit
+        # Why: Build only affected images (ROS, Python, dev, etc.)
+
+        with:
+          base: ${{ github.event.before }}
+          # base: Commit to compare against (SHA of previous commit)
+          # github.event.before: Commit SHA before push/PR
+          # For PRs: Base branch HEAD
+          # For pushes: Previous commit on branch
+
+          # filters: Define patterns that set output variables
+          # YAML multiline string using | operator
+          # Format: outputName: [list of glob patterns]
+          filters: |
+            # ROS and Python are root/base images
+            # Changes to workflow files trigger full rebuild (cascading)
+            # Why: Workflow changes may affect build process itself
+
+            ros:
+              # Trigger ros=true if any of these change:
+              - .github/workflows/_docker-build-template.yml  # Build template
+              - .github/workflows/docker.yml                  # This workflow
+              - docker/ros/**                                 # ROS Dockerfile/scripts
+
+            python:
+              - .github/workflows/_docker-build-template.yml
+              - .github/workflows/docker.yml
+              - docker/python/**                              # Python Dockerfile
+              - pyproject.toml                                # Python dependencies
+
+            dev:
+              # Dev image depends on python image
+              - docker/dev/**                                 # Dev tools/configs
+
+            tests:
+              # Trigger test runs if source code changes
+              - dimos/**                                      # Source code directory
+
+          # Path pattern syntax (gitignore-style):
+          # ** - Match any number of directories
+          # *  - Match any characters except /
+          # ?  - Match single character
+          # [abc] - Match any character in set
+          # ! - Negate pattern (exclude)
+          #
+          # Examples:
+          # src/**/*.py - All .py files under src/
+          # !test/** - Exclude test directory
+          # *.{js,ts} - .js or .ts files
+
+      # ----------------------------------------------------------------------
+      # DETERMINE BRANCH TAG
+      # ----------------------------------------------------------------------
+      - name: Determine Branch Tag
+        id: set-tag
+        # Purpose: Convert branch name to Docker tag
+        # Why: Different branches publish to different image tags
+        # Example: main->latest, dev->dev, feature/foo->feature_foo
+        run: |
+          # GITHUB_REF_NAME: Branch name (e.g., "main", "dev", "feature/auth")
+          case "${GITHUB_REF_NAME}" in
+            main)
+              branch_tag="latest"  # main branch = latest tag
+              ;;
+            dev)
+              branch_tag="dev"     # dev branch = dev tag
+              ;;
+            *)
+              # For feature branches, sanitize name for Docker tag
+              # Docker tag requirements: [a-z0-9_.-]
+              branch_tag=$(echo "${GITHUB_REF_NAME}" \
+                  | tr '[:upper:]' '[:lower:]' \       # Lowercase
+                  | sed -E 's#[^a-z0-9_.-]+#_#g' \     # Replace invalid chars with _
+                  | sed -E 's#^-+|-+$##g')             # Remove leading/trailing -
+              # Example: feature/Auth-2.0 -> feature_auth_2_0
+              ;;
+          esac
+          echo "branch tag determined: ${branch_tag}"
+          echo branch_tag="${branch_tag}" >> "$GITHUB_OUTPUT"
+          # GITHUB_OUTPUT: Special file for setting job outputs
+          # Format: key=value
+          # Accessible in other jobs: needs.check-changes.outputs.branch_tag
+
+  # ==========================================================================
+  # JOB: INSPECT-NEEDS (Debugging)
+  # ==========================================================================
+  # Purpose: Debug job dependencies and outputs
+  # Why: Helps troubleshoot complex conditional builds
+  # When: Always runs (even if other jobs fail)
+  inspect-needs:
+    needs: [check-changes, ros]
+    # Depends on: check-changes and ros
+    # Why both: Can inspect both job states
+
+    runs-on: dimos-runner-ubuntu-2204
+    # Custom runner label (specific machine)
+    # Alternative: runs-on: [self-hosted, Linux, ubuntu-22.04]
+
+    if: always()
+    # always(): Run even if dependencies failed/were skipped
+    # Default: Only run if all dependencies succeeded
+    # Why: Debugging job should always run to show what happened
+
+    steps:
+      - run: |
+          # Print entire needs context as JSON for debugging
+          echo '${{ toJSON(needs) }}'
+          # toJSON(needs): Convert needs context to JSON string
+          # Shows: result, outputs, conclusion for each dependency
+          #
+          # Example output:
+          # {
+          #   "check-changes": {
+          #     "result": "success",
+          #     "outputs": {
+          #       "ros": "true",
+          #       "python": "false",
+          #       "branch-tag": "dev"
+          #     }
+          #   },
+          #   "ros": {
+          #     "result": "skipped"
+          #   }
+          # }
+
+  # ==========================================================================
+  # JOB: ROS (Robot Operating System base image)
+  # ==========================================================================
+  # Purpose: Build ROS base image
+  # When: Only if ROS files changed
+  # Why: ROS is a large dependency (~2GB), only rebuild when needed
+  ros:
+    needs: [check-changes]
+    # Waits for: check-changes to determine if build is needed
+
+    if: needs.check-changes.outputs.ros == 'true'
+    # Conditional: Only run if ROS files changed
+    # Why: Skip expensive ROS build if nothing changed
+
+    uses: ./.github/workflows/_docker-build-template.yml
+    # uses: Call reusable workflow (like a function)
+    # Path must start with ./
+    # Executes: _docker-build-template.yml with these inputs
+
+    with:
+      # Pass inputs to reusable workflow
+      should-run: true                                          # Enable build
+      from-image: ubuntu:22.04                                  # Base image
+      to-image: ghcr.io/dimensionalos/ros:${{ needs.check-changes.outputs.branch-tag }}
+      dockerfile: ros                                           # Use docker/ros/Dockerfile
+
+  # ==========================================================================
+  # JOB: ROS-PYTHON (ROS + Python combined image)
+  # ==========================================================================
+  # Purpose: Add Python to ROS image
+  # When: If Python or ROS changed
+  # Dependencies: Must wait for ROS build to complete
+  ros-python:
+    needs: [check-changes, ros]
+    # Depends on: ros (must complete first)
+
+    if: always()
+    # Why always(): Need to evaluate complex condition below
+    # Without this: Job would skip if ros was skipped
+
+    uses: ./.github/workflows/_docker-build-template.yml
+    with:
+      should-run: ${{
+        needs.check-changes.outputs.python == 'true' &&
+        needs.check-changes.result != 'error' &&
+        needs.ros.result != 'error'
+        }}
+      # Complex condition breakdown:
+      # 1. Python files changed AND
+      # 2. check-changes job didn't error AND
+      # 3. ros job didn't error (may have been skipped, that's ok)
+      #
+      # Why: Only build if dependencies succeeded and files changed
+
+      from-image: ghcr.io/dimensionalos/ros:${{ needs.ros.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+      # Conditional base image:
+      # - If ros job succeeded: Use newly built image with current branch tag
+      # - Otherwise: Use existing dev image (ros was skipped, use last known good)
+      # Syntax: condition && true_value || false_value (ternary operator)
+
+      to-image: ghcr.io/dimensionalos/ros-python:${{ needs.check-changes.outputs.branch-tag }}
+      dockerfile: python
+
+  # ==========================================================================
+  # JOB: PYTHON (Standalone Python base image, no ROS)
+  # ==========================================================================
+  # Purpose: Build Python environment without ROS (smaller, faster)
+  # When: If Python files changed
+  # Why separate from ros-python: Not all projects need ROS
+  python:
+    needs: [check-changes]
+    if: needs.check-changes.outputs.python == 'true'
+
+    uses: ./.github/workflows/_docker-build-template.yml
+    with:
+      should-run: true
+      dockerfile: python
+      from-image: ubuntu:22.04                                  # Build from scratch
+      to-image: ghcr.io/dimensionalos/python:${{ needs.check-changes.outputs.branch-tag }}
+
+  # ==========================================================================
+  # JOB: DEV (Development environment, no ROS)
+  # ==========================================================================
+  # Purpose: Add development tools to Python image
+  # When: If dev or Python files changed
+  # Includes: VSCode extensions, debugging tools, linters, formatters
+  dev:
+    needs: [check-changes, python]
+    if: always()
+
+    uses: ./.github/workflows/_docker-build-template.yml
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        ((needs.python.result == 'success') ||
+        (needs.python.result == 'skipped' &&
+        needs.check-changes.outputs.dev == 'true')) }}
+      # Condition: Build if:
+      # - check-changes succeeded AND
+      # - (python built successfully OR
+      #    (python was skipped AND dev files changed))
+      #
+      # Why complex: Handle both full rebuild and incremental dev-only changes
+
+      from-image: ghcr.io/dimensionalos/python:${{ needs.python.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+      to-image: ghcr.io/dimensionalos/dev:${{ needs.check-changes.outputs.branch-tag }}
+      dockerfile: dev
+
+  # ==========================================================================
+  # JOB: ROS-DEV (Development environment with ROS)
+  # ==========================================================================
+  # Purpose: Add development tools to ros-python image
+  # When: If dev, Python, or ROS files changed
+  ros-dev:
+    needs: [check-changes, ros-python]
+    if: always()
+
+    uses: ./.github/workflows/_docker-build-template.yml
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        (needs.check-changes.outputs.dev == 'true' ||
+         (needs.ros-python.result == 'success' && (needs.check-changes.outputs.python == 'true' || needs.check-changes.outputs.ros == 'true')))
+        }}
+
+      from-image: ghcr.io/dimensionalos/ros-python:${{ needs.ros-python.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+      to-image: ghcr.io/dimensionalos/ros-dev:${{ needs.check-changes.outputs.branch-tag }}
+      dockerfile: dev
+
+  # ==========================================================================
+  # TEST JOBS (Run pytest in built containers)
+  # ==========================================================================
+  # All test jobs follow similar pattern:
+  # 1. Wait for dev image to build
+  # 2. Only run if image built or tests changed
+  # 3. Call tests.yml with specific test command
+  # 4. Run in parallel (independent jobs)
+
+  run-ros-tests:
+    needs: [check-changes, ros-dev]
+    if: always()
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit  # Pass all secrets (API keys) to tests
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        ((needs.ros-dev.result == 'success') ||
+        (needs.ros-dev.result == 'skipped' &&
+        needs.check-changes.outputs.tests == 'true'))
+        }}
+      cmd: "pytest && pytest -m ros"  # Run all tests + ROS-specific tests
+      dev-image: ros-dev:${{ (needs.check-changes.outputs.python == 'true' || needs.check-changes.outputs.dev == 'true' || needs.check-changes.outputs.ros == 'true') && needs.ros-dev.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+
+  run-tests:
+    needs: [check-changes, dev]
+    if: always()
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        ((needs.dev.result == 'success') ||
+        (needs.dev.result == 'skipped' &&
+        needs.check-changes.outputs.tests == 'true'))
+        }}
+      cmd: "pytest"  # Run all tests (except marked tests)
+      dev-image: dev:${{ (needs.check-changes.outputs.python == 'true' || needs.check-changes.outputs.dev == 'true') && needs.dev.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+
+  # Run in parallel with normal tests for speed
+  # Marked tests are split to allow parallelization and timeouts
+  run-heavy-tests:
+    needs: [check-changes, dev]
+    if: always()
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        ((needs.dev.result == 'success') ||
+        (needs.dev.result == 'skipped' &&
+        needs.check-changes.outputs.tests == 'true'))
+        }}
+      cmd: "pytest -m heavy"  # Only heavy/slow tests
+      # Why separate: Isolate slow tests, allow different timeout
+      dev-image: dev:${{ (needs.check-changes.outputs.python == 'true' || needs.check-changes.outputs.dev == 'true') && needs.dev.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+
+  run-lcm-tests:
+    needs: [check-changes, dev]
+    if: always()
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        ((needs.dev.result == 'success') ||
+        (needs.dev.result == 'skipped' &&
+        needs.check-changes.outputs.tests == 'true'))
+        }}
+      cmd: "pytest -m lcm"  # LCM (Lightweight Communications) tests
+      # Why separate: May need specific network setup or services
+      dev-image: dev:${{ (needs.check-changes.outputs.python == 'true' || needs.check-changes.outputs.dev == 'true') && needs.dev.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+
+  run-integration-tests:
+    needs: [check-changes, dev]
+    if: always()
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        ((needs.dev.result == 'success') ||
+        (needs.dev.result == 'skipped' &&
+        needs.check-changes.outputs.tests == 'true'))
+        }}
+      cmd: "pytest -m integration"  # Integration tests (multiple components)
+      # Why separate: Longer runtime, may need external services
+      dev-image: dev:${{ (needs.check-changes.outputs.python == 'true' || needs.check-changes.outputs.dev == 'true') && needs.dev.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+
+  run-mypy:
+    needs: [check-changes, ros-dev]
+    if: always()
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+    with:
+      should-run: ${{
+        needs.check-changes.result == 'success' &&
+        ((needs.ros-dev.result == 'success') ||
+        (needs.ros-dev.result == 'skipped' &&
+        needs.check-changes.outputs.tests == 'true'))
+        }}
+      cmd: "MYPYPATH=/opt/ros/humble/lib/python3.10/site-packages mypy dimos"
+      # mypy: Type checker for Python
+      # MYPYPATH: Add ROS Python packages to type checking path
+      # Why separate job: Type checking is slow, nice to parallelize
+      dev-image: ros-dev:${{ (needs.check-changes.outputs.python == 'true' || needs.check-changes.outputs.dev == 'true' || needs.check-changes.outputs.ros == 'true') && needs.ros-dev.result == 'success' && needs.check-changes.outputs.branch-tag || 'dev' }}
+
+  # ==========================================================================
+  # COMMENTED OUT: MODULE TESTS
+  # ==========================================================================
+  # This was commented out - likely due to issues or no longer needed
+  # Would run tests directly (not via pytest) to avoid forking issues
+  # run-module-tests:
+  #   needs: [check-changes, dev]
+  #   if: ${{ always() && ... }}
+  #   runs-on: [self-hosted, x64, 16gb]  # Specific hardware requirements
+  #   container:
+  #     image: ghcr.io/dimensionalos/dev:...
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         lfs: true  # Checkout Git LFS files
+  #     - name: Configure Git LFS
+  #       run: |
+  #         git lfs install
+  #         git lfs fetch   # Download LFS files
+  #         git lfs checkout
+  #     - name: Run module tests
+  #       env:
+  #         CI: "true"
+  #       run: |
+  #         /entrypoint.sh bash -c "pytest -m module"
+
+# ============================================================================
+# WORKFLOW EXECUTION SCENARIOS
+# ============================================================================
+# Scenario 1: Only documentation changed (README.md)
+#   - paths-ignore triggers: Workflow doesn't run at all
+#   - Result: No jobs execute, no CI time wasted
+#
+# Scenario 2: Python source code changed (dimos/foo.py)
+#   - check-changes: runs, sets python=true, tests=true
+#   - python: runs (builds Python image)
+#   - dev: runs (builds dev image from python)
+#   - run-tests, run-heavy-tests, run-lcm-tests, run-integration-tests: all run
+#   - ros, ros-python, ros-dev: skipped (no ROS changes)
+#   - Result: ~15-20 minutes (parallel test execution)
+#
+# Scenario 3: ROS files changed (docker/ros/Dockerfile)
+#   - check-changes: runs, sets ros=true
+#   - ros: runs (rebuilds ROS base ~10 min)
+#   - ros-python: runs (adds Python ~5 min)
+#   - ros-dev: runs (adds dev tools ~3 min)
+#   - run-ros-tests: runs
+#   - python, dev, other tests: skipped
+#   - Result: ~20-25 minutes (sequential ROS builds)
+#
+# Scenario 4: Only dev tools changed (docker/dev/Dockerfile)
+#   - check-changes: runs, sets dev=true
+#   - python, ros: skipped (no changes)
+#   - dev: runs (uses cached python:dev image)
+#   - ros-dev: runs (uses cached ros-python:dev image)
+#   - All tests: may run if images built successfully
+#   - Result: ~5-10 minutes (fast incremental build)
+#
+# Scenario 5: Everything changed (merge from main to dev)
+#   - All images rebuild in order: ros -> python -> dev
+#   - All tests run in parallel
+#   - Result: ~30-45 minutes (full rebuild)
+
+# ============================================================================
+# BEST PRACTICES DEMONSTRATED
+# ============================================================================
+# 1. Path filtering: Only build what changed
+# 2. Job dependencies: Ensure correct build order (needs)
+# 3. Parallel execution: Run independent tests simultaneously
+# 4. Conditional builds: Complex if conditions prevent unnecessary work
+# 5. Image tagging: Branch-specific tags (dev, main/latest, feature branches)
+# 6. Reusable workflows: DRY principle (_docker-build-template.yml)
+# 7. Disk management: Aggressive cleanup prevents out-of-space errors
+# 8. Layer caching: GitHub Actions cache speeds up Docker builds
+# 9. Debugging: inspect-needs job helps troubleshoot complex workflows
+# 10. Secrets: inherited by test jobs (API keys, tokens)

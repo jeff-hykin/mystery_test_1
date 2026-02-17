@@ -40,7 +40,98 @@ jobs:
             echo '#'
             echo '#'
             brew --prefix
-            uv run python -c "import platform,sys; print(platform.machine()); print(sys.executable)"
+            echo "=== Host / Rosetta ==="
+            uname -a
+            uname -m
+            # 1 = running under Rosetta translation, 0 = native (arm64)
+            sysctl -n sysctl.proc_translated 2>/dev/null || true
+
+            echo "=== Which python(s) ==="
+            command -v python || true
+            command -v python3 || true
+            which -a python  || true
+            which -a python3 || true
+
+            echo "=== Python runtime view ==="
+            python3 - <<'PY'
+            import platform, sys, struct, sysconfig
+            print("platform.machine()      =", platform.machine())
+            print("platform.platform()     =", platform.platform())
+            print("sys.executable          =", sys.executable)
+            print("sys.version             =", sys.version.replace("\n"," "))
+            print("pointer_bits            =", struct.calcsize("P") * 8)
+            print("sysconfig.get_platform  =", sysconfig.get_platform())
+            print("CC (sysconfig)          =", sysconfig.get_config_var("CC"))
+            print("CFLAGS (sysconfig)      =", sysconfig.get_config_var("CFLAGS"))
+            print("LDSHARED (sysconfig)    =", sysconfig.get_config_var("LDSHARED"))
+            PY
+
+            echo "=== Mach-O / arch of the actual python executable ==="
+            PYEXE="$(python3 -c 'import sys; print(sys.executable)')"
+            ls -la "$PYEXE"
+            file "$PYEXE"
+
+            # If universal, show slices:
+            lipo -archs "$PYEXE" 2>/dev/null || true
+            lipo -info  "$PYEXE" 2>/dev/null || true
+
+            # Deep Mach-O header + load commands showing the CPU type/subtype
+            otool -hv "$PYEXE" || true
+            otool -l  "$PYEXE" | sed -n '1,120p' || true
+
+            echo "=== Dynamic loader + linked libs (sanity check) ==="
+            otool -L "$PYEXE" | sed -n '1,80p' || true
+
+            echo "=== Environment flags that often cause cross-arch weirdness ==="
+            env | egrep '^(ARCHFLAGS|CFLAGS|CXXFLAGS|LDFLAGS|SDKROOT|MACOSX_DEPLOYMENT_TARGET|CMAKE_OSX_ARCHITECTURES|_PYTHON_HOST_PLATFORM|PIP_(PLATFORM|ONLY_BINARY)|UV_.*)=' || true
+
+            echo "=== Clang identity ==="
+            xcrun --find clang
+            xcrun --find clang++
+            xcrun clang --version
+            xcrun clang++ --version
+
+            echo "=== Clang default target triple & config ==="
+            # Shows default target (e.g., arm64-apple-darwin...) and selected GCC installation
+            xcrun clang -v -E - </dev/null 2>&1 | sed -n '1,120p'
+
+            echo "=== What targets this clang *knows about* (built-in backends) ==="
+            # This is very informative: lists registered targets (AArch64, X86, etc.)
+            xcrun clang -print-targets 2>/dev/null || true
+
+            echo "=== Test compile probes (no linking) ==="
+            TMPDIR="$(mktemp -d)"
+            cat >"$TMPDIR/t.c" <<'C'
+            int main(){return 0;}
+            C
+
+            # Probe default compile (prints the cc1 invocation)
+            xcrun clang -### -c "$TMPDIR/t.c" 2>&1 | sed -n '1,120p'
+
+            # Probe ARM64 compilation explicitly
+            xcrun clang -### -target arm64-apple-macos13 -c "$TMPDIR/t.c" 2>&1 | sed -n '1,120p' || true
+
+            # Probe X86_64 compilation explicitly
+            xcrun clang -### -target x86_64-apple-macos13 -c "$TMPDIR/t.c" 2>&1 | sed -n '1,120p' || true
+
+            echo "=== Does it actually produce each arch object file? ==="
+            xcrun clang -c "$TMPDIR/t.c" -o "$TMPDIR/default.o"
+            file "$TMPDIR/default.o"
+
+            xcrun clang -target arm64-apple-macos13 -c "$TMPDIR/t.c" -o "$TMPDIR/arm64.o" || true
+            file "$TMPDIR/arm64.o" || true
+
+            xcrun clang -target x86_64-apple-macos13 -c "$TMPDIR/t.c" -o "$TMPDIR/x86_64.o" || true
+            file "$TMPDIR/x86_64.o" || true
+
+            echo "=== SDK / toolchain ==="
+            xcrun --sdk macosx --show-sdk-path
+            xcrun --sdk macosx --show-sdk-version || true
+            xcode-select -p || true
+
+            rm -rf "$TMPDIR"
+
+            Wh
             echo '#'
             echo '#'
             echo '#'

@@ -1,0 +1,246 @@
+# ============================================================================
+# CODE CLEANUP WORKFLOW (Pre-commit hooks in CI)
+# ============================================================================
+# Purpose: Automatically run code formatters/linters and commit fixes
+# When: On every push and pull request
+# What: Runs pre-commit hooks (black, isort, flake8, mypy, etc.)
+# Why: Enforce code style automatically, prevent style debates, reduce review time
+name: code-cleanup
+
+# ============================================================================
+# TRIGGER EVENTS
+# ============================================================================
+on:
+  # push: Run on every push to any branch
+  # Why: Catch and fix style issues immediately after push
+  # Alternative: Only on push to main (less comprehensive)
+  push:
+
+  # pull_request: Run on every PR (opened, synchronized, reopened)
+  # Why: Ensure PRs meet style standards before review
+  # Why run on both: Push catches issues immediately, PR ensures clean diffs
+  pull_request:
+
+# ============================================================================
+# PERMISSIONS
+# ============================================================================
+# This workflow needs elevated permissions because it commits changes
+permissions:
+  contents: write      # Write access to push commits
+  # Why write: Workflow auto-commits formatting fixes
+
+  packages: write      # Write access to GitHub packages (may not be needed)
+  # Purpose unclear for this workflow - may be copied from template
+
+  pull-requests: read  # Read PR information
+  # Why: May need to comment on PRs or check PR metadata
+
+# ============================================================================
+# JOBS
+# ============================================================================
+jobs:
+  pre-commit:
+    # ========================================================================
+    # RUNNER: SELF-HOSTED
+    # ========================================================================
+    # Why self-hosted: Faster execution, persistent cache of pre-commit hooks
+    # Single label (no OS specified): Assumes Linux is default/only option
+    runs-on: self-hosted
+
+    steps:
+      # ----------------------------------------------------------------------
+      # FIX PERMISSIONS (Self-hosted runner issue)
+      # ----------------------------------------------------------------------
+      - name: Fix permissions
+        run: |
+          # chown: Change ownership of workspace directory to current user
+          # Why: Previous workflow may have left files owned by root
+          # ${{ github.workspace }}: Full path to checked out repository
+          # || true: Don't fail if chown errors (permission denied, not needed, etc.)
+          sudo chown -R $USER:$USER ${{ github.workspace }} || true
+
+      # ----------------------------------------------------------------------
+      # CHECKOUT REPOSITORY
+      # ----------------------------------------------------------------------
+      - uses: actions/checkout@v3
+        # Why @v3 not @v4: May be pinned to older version for stability
+        # Or: Simply hasn't been updated yet
+
+      # ----------------------------------------------------------------------
+      # SETUP PYTHON
+      # ----------------------------------------------------------------------
+      - uses: actions/setup-python@v3
+        # Purpose: Install Python for running pre-commit
+        # Default Python version: Usually latest stable (3.11 or 3.12)
+        # No version specified: Uses action's default
+        # Why needed: Pre-commit is a Python tool
+
+      # ----------------------------------------------------------------------
+      # SETUP UV (Fast Python package installer)
+      # ----------------------------------------------------------------------
+      - uses: astral-sh/setup-uv@v4
+        # Purpose: Install uv (modern Python package manager)
+        # Why: Faster than pip for installing dependencies
+        # May be used by pre-commit hooks that install packages
+
+      # ----------------------------------------------------------------------
+      # RUN PRE-COMMIT (First attempt)
+      # ----------------------------------------------------------------------
+      - name: Run pre-commit
+        id: pre-commit-first
+        # id: Unique identifier for this step (used in subsequent steps)
+        # Why name it: Can reference results via steps.pre-commit-first.outcome
+
+        uses: pre-commit/action@v3.0.1
+        # Purpose: Run pre-commit hooks on all files
+        # What pre-commit does:
+        #   1. Reads .pre-commit-config.yaml
+        #   2. Installs hook environments (cached for speed)
+        #   3. Runs each hook on modified files (or all files in CI)
+        #   4. Applies auto-fixes if hooks support it
+        #
+        # Common hooks:
+        #   - black: Python code formatter
+        #   - isort: Import sorter
+        #   - flake8: Linter (style checker)
+        #   - mypy: Type checker
+        #   - trailing-whitespace: Remove trailing spaces
+        #   - end-of-file-fixer: Ensure newline at end of files
+
+        continue-on-error: true
+        # Why: Allow workflow to continue even if hooks fail
+        # Purpose: Run hooks again (second attempt) to fix issues
+        # Pattern: First run may fail, auto-fix applies, second run succeeds
+
+      # ----------------------------------------------------------------------
+      # RE-RUN PRE-COMMIT (Second attempt)
+      # ----------------------------------------------------------------------
+      - name: Re-run pre-commit if failed initially
+        id: pre-commit-retry
+        if: steps.pre-commit-first.outcome == 'failure'
+        # Conditional: Only run if first attempt failed
+        # Why retry:
+        #   1. First run may fail but auto-fix files
+        #   2. Second run checks if fixes resolved all issues
+        #   3. Some hooks need multiple passes (e.g., isort then black)
+        #
+        # Outcome values: success, failure, cancelled, skipped
+        # Why check outcome not result: outcome includes continue-on-error behavior
+
+        uses: pre-commit/action@v3.0.1
+        continue-on-error: false
+        # Why false: Second failure is a real error (auto-fix didn't help)
+        # Workflow will fail if hooks still fail after retry
+
+      # ----------------------------------------------------------------------
+      # AUTO-COMMIT CHANGES
+      # ----------------------------------------------------------------------
+      - name: Commit code changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        # Purpose: Automatically commit any changes made by pre-commit hooks
+        # What it does:
+        #   1. git add . (stage all changes)
+        #   2. git commit (if changes exist)
+        #   3. git push (back to same branch)
+        #
+        # Why useful:
+        #   - Developers don't need to remember to run hooks locally
+        #   - CI automatically fixes and commits style issues
+        #   - Keeps commits focused on content, not formatting debates
+
+        with:
+          commit_message: "CI code cleanup"
+          # Message for auto-commits
+          # Shows in git history that this was automated
+
+          # Other available options (not used):
+          # file_pattern: '*.py *.js'  # Only commit specific files
+          # commit_user_name: 'GitHub Actions Bot'
+          # commit_user_email: 'actions@github.com'
+          # commit_author: 'Author Name <email@example.com>'
+          # push_options: '--force'  # Force push (dangerous!)
+          # skip_dirty_check: false  # Skip if no changes
+          # branch: main  # Push to specific branch
+
+# ============================================================================
+# PRE-COMMIT CONFIGURATION
+# ============================================================================
+# Pre-commit hooks are configured in .pre-commit-config.yaml:
+#
+# repos:
+#   - repo: https://github.com/psf/black
+#     rev: 23.3.0
+#     hooks:
+#       - id: black  # Python formatter
+#
+#   - repo: https://github.com/pycqa/isort
+#     rev: 5.12.0
+#     hooks:
+#       - id: isort  # Import sorter
+#
+#   - repo: https://github.com/pre-commit/pre-commit-hooks
+#     rev: v4.4.0
+#     hooks:
+#       - id: trailing-whitespace  # Remove trailing spaces
+#       - id: end-of-file-fixer    # Ensure newline at EOF
+#       - id: check-yaml           # Validate YAML syntax
+#       - id: check-json           # Validate JSON syntax
+
+# ============================================================================
+# WORKFLOW BEHAVIOR
+# ============================================================================
+# Scenario 1: Code is perfectly formatted
+#   - Pre-commit runs successfully
+#   - No changes made
+#   - git-auto-commit detects no changes, skips commit
+#   - Workflow succeeds
+#
+# Scenario 2: Code has auto-fixable issues (e.g., trailing whitespace)
+#   - First pre-commit run fails but fixes issues
+#   - Second pre-commit run succeeds (issues fixed)
+#   - git-auto-commit commits the fixes
+#   - Workflow succeeds
+#   - Developer sees new commit pushed to their branch
+#
+# Scenario 3: Code has unfixable issues (e.g., type errors)
+#   - First pre-commit run fails
+#   - Second pre-commit run still fails (can't auto-fix)
+#   - Workflow fails
+#   - Developer must manually fix issues and push again
+
+# ============================================================================
+# BEST PRACTICES
+# ============================================================================
+# 1. Run pre-commit locally before pushing:
+#    $ pre-commit install  # Install git hooks
+#    $ pre-commit run --all-files  # Run on all files
+#
+# 2. Keep .pre-commit-config.yaml versions up to date:
+#    $ pre-commit autoupdate
+#
+# 3. Use continue-on-error wisely:
+#    - First attempt: true (allow retry)
+#    - Second attempt: false (real failure)
+#
+# 4. Be careful with auto-commit:
+#    - Good: Formatting, whitespace, import sorting
+#    - Bad: Logic changes, adding features, removing code
+#
+# 5. Consider separate workflows for different hook types:
+#    - Fast hooks (formatting): Run on every push
+#    - Slow hooks (mypy, tests): Run only on PR
+
+# ============================================================================
+# POTENTIAL ISSUES
+# ============================================================================
+# 1. Commit loops: Auto-commit triggers push, which triggers workflow again
+#    Solution: Git auto-commit action has built-in loop prevention
+#
+# 2. Merge conflicts: Auto-commit may conflict with manual pushes
+#    Solution: Pull before pushing, or use pull_request events only
+#
+# 3. Permission errors: Bot can't push to protected branches
+#    Solution: Add bot to bypass list or use pull_request comments instead
+#
+# 4. Large changesets: Pre-commit reformats entire codebase
+#    Solution: Run incrementally, add --files option to limit scope

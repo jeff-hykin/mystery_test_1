@@ -1,0 +1,224 @@
+# ============================================================================
+# REUSABLE WORKFLOW FOR RUNNING TESTS IN DOCKER CONTAINERS
+# ============================================================================
+# This is a reusable workflow (called by docker.yml after building images)
+# Purpose: Run pytest tests inside Docker containers with various configurations
+# Why reusable: Multiple test jobs use the same pattern (different commands/images)
+name: tests
+
+# ============================================================================
+# TRIGGER: WORKFLOW_CALL
+# ============================================================================
+on:
+  workflow_call:
+    # Inputs: Parameters passed from calling workflow
+    inputs:
+      should-run:
+        required: false
+        type: boolean
+        default: true
+        # Purpose: Conditional execution (skip if dependencies failed)
+        # Why default true: Usually want to run tests
+        # When false: Previous build failed or files didn't change
+
+      dev-image:
+        required: true
+        type: string
+        default: "dev:dev"
+        # Purpose: Docker image name to run tests in
+        # Example: "dev:dev" or "ros-dev:latest"
+        # Why required: Tests must run in consistent environment
+        # Format: image:tag (resolved to ghcr.io/dimensionalos/{image})
+
+      cmd:
+        required: true
+        type: string
+        # Purpose: Test command to execute inside container
+        # Examples:
+        #   "pytest" - run all tests
+        #   "pytest -m heavy" - run only tests marked with @pytest.mark.heavy
+        #   "pytest -m ros" - run only ROS-specific tests
+        #   "mypy dimos" - run type checking
+        # Why required: Different test suites need different commands
+
+# ============================================================================
+# PERMISSIONS
+# ============================================================================
+# Restricted permissions for security (principle of least privilege)
+permissions:
+  contents: read   # Read repository code
+  packages: read   # Pull Docker images from GitHub Container Registry
+  # Why packages:read: Need to pull pre-built dev images
+  # Why NOT packages:write: Tests don't publish anything
+
+# ============================================================================
+# JOBS
+# ============================================================================
+jobs:
+  # Commented out cleanup job - was causing issues or no longer needed
+  # This would have pre-freed disk space before running tests
+  # cleanup:
+  #   runs-on: dimos-runner-ubuntu-2204  # Custom self-hosted runner label
+  #   steps:
+  #     - name: exit early
+  #       if: ${{ !inputs.should-run }}
+  #       run: |
+  #         exit 0  # Exit successfully without doing anything
+  #
+  #     - name: Free disk space
+  #       run: |
+  #         # Remove pre-installed software to free disk space
+  #         sudo rm -rf /opt/ghc
+  #         sudo rm -rf /usr/share/dotnet
+  #         sudo rm -rf /usr/local/share/boost
+  #         sudo rm -rf /usr/local/lib/android
+
+  run-tests:
+    # ========================================================================
+    # RUNNER: SELF-HOSTED LINUX
+    # ========================================================================
+    runs-on: [self-hosted, Linux]
+    # Why self-hosted: Faster, persistent cache, custom hardware (GPUs)
+    # Why Linux: Docker containers run on Linux
+
+    # ========================================================================
+    # CONTAINER
+    # ========================================================================
+    # container: Run all job steps inside a Docker container
+    # Why: Consistent environment, pre-installed dependencies, isolation
+    # Alternative: Run directly on runner (faster startup, less isolation)
+    container:
+      # image: Docker image to run job steps inside
+      # ghcr.io: GitHub Container Registry
+      # dimensionalos: Organization name
+      # ${{ inputs.dev-image }}: Dynamic image name from caller
+      # Example: ghcr.io/dimensionalos/dev:dev
+      image: ghcr.io/dimensionalos/${{ inputs.dev-image }}
+
+      # env: Environment variables available inside container
+      # secrets: Context for accessing GitHub secrets
+      # Why pass API keys: Tests may need to call external services
+      env:
+        # OpenAI API key for GPT/Whisper/DALL-E tests
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        # Anthropic API key for Claude tests
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # Alibaba Cloud API key
+        ALIBABA_API_KEY: ${{ secrets.ALIBABA_API_KEY }}
+
+      # Other container options (not used here):
+      # credentials:  # Registry authentication
+      #   username: ${{ github.actor }}
+      #   password: ${{ secrets.GITHUB_TOKEN }}
+      # volumes:  # Mount volumes into container
+      #   - /tmp:/tmp:rw
+      # options: --cpus 4 --memory 8g  # Docker run options
+
+    steps:
+      # ----------------------------------------------------------------------
+      # CHECKOUT REPOSITORY
+      # ----------------------------------------------------------------------
+      - uses: actions/checkout@v4
+        # Why: Need repository code (tests, source files) inside container
+        # Container starts with only base image files, not repo code
+
+      # ----------------------------------------------------------------------
+      # FIX GIT PERMISSIONS (Container security)
+      # ----------------------------------------------------------------------
+      - name: Fix permissions
+        run: |
+          # git config --global: Set global git configuration
+          # --add safe.directory: Mark directory as safe for git operations
+          # '*': Trust all directories (wildcard)
+          # Why needed: Container runs as different user than checkout action
+          # Problem: Git 2.35.2+ blocks operations in repos owned by different user
+          # Solution: Explicitly trust all directories
+          git config --global --add safe.directory '*'
+
+      # ----------------------------------------------------------------------
+      # RUN TESTS
+      # ----------------------------------------------------------------------
+      - name: Run tests
+        run: |
+          # /entrypoint.sh: Custom script in Docker image
+          # Purpose: Set up environment (PATH, env vars, etc.) before running command
+          # bash -c: Run command in bash shell
+          # "${{ inputs.cmd }}": Dynamic command from caller (pytest, mypy, etc.)
+          #
+          # Example commands:
+          #   pytest                  # Run all tests
+          #   pytest -m heavy         # Run only heavy/slow tests
+          #   pytest -m ros           # Run ROS-specific tests
+          #   pytest -m integration   # Run integration tests
+          #   mypy dimos              # Type check the dimos package
+          /entrypoint.sh bash -c "${{ inputs.cmd }}"
+
+        # Why use entrypoint.sh wrapper:
+        # 1. Environment setup (activate conda, set PYTHONPATH, etc.)
+        # 2. Consistency across local and CI environments
+        # 3. Pre-run initialization (start services, check dependencies)
+
+      # ----------------------------------------------------------------------
+      # DISK SPACE DEBUG (Only on failure)
+      # ----------------------------------------------------------------------
+      - name: check disk space
+        # if: failure() means only run this step if previous step failed
+        # Purpose: Debug why tests failed (out of disk space?)
+        if: failure()
+        run: |
+          # df -h: Disk free space in human-readable format
+          # Shows: Filesystem, Size, Used, Available, Use%, Mounted on
+          # Why: Tests may fail due to out-of-disk errors (large datasets, caches)
+          df -h
+
+# ============================================================================
+# PYTEST MARKERS USED IN THIS PROJECT
+# ============================================================================
+# Markers allow selective test execution (via pytest -m marker)
+# Defined in pyproject.toml or pytest.ini
+#
+# @pytest.mark.heavy - Slow tests (large datasets, long computation)
+# @pytest.mark.ros - Tests requiring ROS (Robot Operating System)
+# @pytest.mark.lcm - Tests using LCM (Lightweight Communications and Marshalling)
+# @pytest.mark.integration - Integration tests (multiple components)
+# @pytest.mark.module - Module-level tests
+#
+# Why use markers:
+# 1. Parallelization: Run different test suites in parallel jobs
+# 2. Selective testing: Only run relevant tests (save CI time)
+# 3. Organization: Group tests by type/requirement
+# 4. Debugging: Easy to run specific subset locally
+
+# ============================================================================
+# HOW THIS WORKFLOW IS CALLED
+# ============================================================================
+# Example from docker.yml:
+#
+# jobs:
+#   run-tests:
+#     needs: [check-changes, dev]  # Wait for dev image to be built
+#     uses: ./.github/workflows/tests.yml
+#     secrets: inherit  # Pass secrets (API keys)
+#     with:
+#       should-run: ${{ needs.dev.result == 'success' }}
+#       cmd: "pytest"
+#       dev-image: dev:${{ needs.check-changes.outputs.branch-tag }}
+#
+#   run-heavy-tests:  # Parallel job for heavy tests
+#     needs: [check-changes, dev]
+#     uses: ./.github/workflows/tests.yml
+#     secrets: inherit
+#     with:
+#       should-run: ${{ needs.dev.result == 'success' }}
+#       cmd: "pytest -m heavy"  # Only run heavy tests
+#       dev-image: dev:${{ needs.check-changes.outputs.branch-tag }}
+
+# ============================================================================
+# BENEFITS OF DOCKER CONTAINERS FOR TESTING
+# ============================================================================
+# 1. Consistency: Same environment locally and in CI
+# 2. Isolation: Tests don't pollute runner environment
+# 3. Dependencies: All tools/libraries pre-installed in image
+# 4. Reproducibility: Anyone can run tests in same container
+# 5. Speed: No install time (dependencies already in image)
+# 6. Matrix testing: Easy to test multiple Python/OS versions (different images)
