@@ -37,16 +37,11 @@ jobs:
       - name: Follow Development Install and Test
         run: |
 
-          git clone https://github.com/dimensionalOS/dimos.git
-          cd dimos
-          git checkout dev
-
           SECONDS=0
 
           uv sync --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
 
-          # FIXME:
-          # uv run pytest dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current
+          uv run pytest dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current
 
           # Run mypy check for multiple Python versions
           uv run mypy --python-version 3.10 dimos
