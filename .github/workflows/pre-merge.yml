@@ -66,7 +66,7 @@ jobs:
               PYEXE=$(python3 -c "import sys; print(sys.executable)")
               echo
               echo "================ PYTHON MACH-O INFO ================"
-              echo "Executable:
+              echo "Executable:"
             echo '#'
             echo '#'
             echo '#'
