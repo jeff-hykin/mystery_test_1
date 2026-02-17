@@ -3,11 +3,11 @@
 echo "Ensuring pip versions are correct" 
 time uv sync --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
 
+echo "Running pre-commit checks"
+time pre-commit run --all-files
+
 echo "Running mypy checks"
 time uv run mypy --python-version 3.10 --python-version 3.12 dimos
-
-# check blueprint before other tests
-time uv run pytest dimos/robot/test_all_blueprints_generation.py::test_all_blueprints_is_current
 
 echo "# "
 echo "# "
