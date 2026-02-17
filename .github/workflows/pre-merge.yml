@@ -35,6 +35,8 @@ jobs:
           if [ "$(uname)" = "Darwin" ]; then
             # because we add "-march=native" in setup.py and there's a compiler arg issue with that on macos arm
             export ARCHFLAGS="-arch $(uname -m)"
+            export CFLAGS="-O3 -march=armv8-a"
+            export CXXFLAGS="-O3 -march=armv8-a"
             # export CXXFLAGS="-Xclang -target-cpu -Xclang $target"
             # export CFLAGS="-Xclang -target-cpu -Xclang $target"
             # install brew
