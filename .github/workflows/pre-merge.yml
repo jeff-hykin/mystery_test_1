@@ -1,10 +1,6 @@
 name: pre_merge
 
 on:
-  #pull_request:
-  #  branches:
-  #    - master
-  #    - dev
   workflow_dispatch:
 
 permissions:
@@ -14,10 +10,10 @@ jobs:
   pytest_fast:
     strategy:
       matrix:
-        # os: [ ubuntu-24.04 ]
         os: [ macos-15 ]
-    
+
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -30,56 +26,93 @@ jobs:
 
       - name: Install System dependencies
         run: |
-          # if macos
           if [ "$(uname)" = "Darwin" ]; then
-            # install brew
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            echo '#'
-            echo '#'
-            echo '#'
-            echo '#'
-            echo '#'
-              echo "================ HOST INFO ================"
-              uname -a
-              echo "uname -m: $(uname -m)"
-              echo "Rosetta translated (1=yes, 0=no):"
-              sysctl -n sysctl.proc_translated 2>/dev/null || echo "not supported"
+            echo "================ HOST INFO ================"
+            uname -a
+            echo "uname -m: $(uname -m)"
+            echo "Runner arch: ${{ runner.arch }}"
+            echo "Rosetta translated (1=yes, 0=no):"
+            sysctl -n sysctl.proc_translated 2>/dev/null || echo "not supported"
+            echo
 
-              echo
-              echo "================ PYTHON DISCOVERY ================"
-              echo "which python:"
-              which python 2>/dev/null || echo "python not found"
-              echo "which python3:"
-              which python3 2>/dev/null || echo "python3 not found"
-              echo "all python3 in PATH:"
-              which -a python3 2>/dev/null || true
+            echo "================ XCODE / SDK ================"
+            xcode-select -p || true
+            xcodebuild -version || true
+            xcrun --show-sdk-path || true
+            xcrun --show-sdk-version || true
+            echo
 
-              echo
-              echo "================ PYTHON RUNTIME VIEW ================"
-              uv run python -c "import platform, sys, struct, sysconfig; \
-              print('platform.machine() =', platform.machine()); \
-              print('platform.platform() =', platform.platform()); \
-              print('sys.executable =', sys.executable); \
-              print('sys.version =', sys.version.replace('\n',' ')); \
-              print('pointer_bits =', struct.calcsize('P')*8); \
-              print('sysconfig platform =', sysconfig.get_platform()); \
-              print('CC =', sysconfig.get_config_var('CC')); \
-              print('CFLAGS =', sysconfig.get_config_var('CFLAGS')); \
-              print('LDSHARED =', sysconfig.get_config_var('LDSHARED'))"
+            echo "================ CLANG DISCOVERY ================"
+            which clang || true
+            which clang++ || true
+            which -a clang || true
+            which -a clang++ || true
+            echo
 
-              PYEXE=$(uv run python -c "import sys; print(sys.executable)")
-              echo
-              echo "================ PYTHON MACH-O INFO ================"
-              echo "Executable: $PYEXE"
-            echo '#'
-            echo '#'
-            echo '#'
-            echo '#'
-            echo '#'
+            echo "================ CLANG VERSION ================"
+            clang --version || true
+            clang++ --version || true
+            echo
+
+            echo "================ CLANG VERBOSE (-v) ================"
+            clang -v || true
+            echo
+
+            echo "================ CLANG TARGET INFO ================"
+            clang -print-target-triple || true
+            clang -print-effective-triple || true
+            clang -dumpmachine || true
+            echo
+
+            echo "================ CLANG SUPPORTED TARGETS ================"
+            clang --print-supported-cpus 2>/dev/null || true
+            echo
+
+            echo "================ CLANG DRIVER TRACE ================"
+            echo 'int main(){return 0;}' > test.cpp
+            clang++ -### test.cpp 2>&1 || true
+            echo
+
+            echo "================ ENVIRONMENT FLAGS ================"
+            echo "CC=$CC"
+            echo "CXX=$CXX"
+            echo "CFLAGS=$CFLAGS"
+            echo "CXXFLAGS=$CXXFLAGS"
+            echo "ARCHFLAGS=$ARCHFLAGS"
+            echo
+
+            echo "================ PYTHON DISCOVERY ================"
+            which python || true
+            which python3 || true
+            which -a python3 || true
+            echo
+
+            echo "================ PYTHON RUNTIME VIEW ================"
+            uv run python -c "import platform, sys, struct, sysconfig; print('platform.machine() =', platform.machine()); print('platform.platform() =', platform.platform()); print('sys.executable =', sys.executable); print('sys.version =', sys.version.replace('\n',' ')); print('pointer_bits =', struct.calcsize('P')*8); print('sysconfig platform =', sysconfig.get_platform()); print('CC =', sysconfig.get_config_var('CC')); print('CFLAGS =', sysconfig.get_config_var('CFLAGS')); print('LDSHARED =', sysconfig.get_config_var('LDSHARED'))"
+            
+            PYEXE=$(uv run python -c "import sys; print(sys.executable)")
+
+            echo
+            echo "================ PYTHON MACH-O INFO ================"
+            echo "Executable: $PYEXE"
+            file "$PYEXE" || true
+            lipo -info "$PYEXE" 2>/dev/null || true
+            otool -hv "$PYEXE" 2>/dev/null || true
+            echo
+
+            echo "================ SDK SYSROOT CHECK ================"
+            clang -E -x c++ - -v < /dev/null 2>&1 || true
+            echo
+
+            echo "================ HOMEBREW (if present) ================"
+            which brew || true
+            brew config 2>/dev/null || true
+            echo
+
             brew install gnu-sed portaudio git-lfs libjpeg-turbo
             export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
             export ARCHFLAGS="arm64"
-          # if ubuntu
+
           else
             sudo apt-get update
             sudo apt-get install -y \
@@ -95,3 +128,4 @@ jobs:
       - name: Install and run tests
         run: |
           bin/ci-fast
+
