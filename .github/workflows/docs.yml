@@ -1,0 +1,40 @@
+name: docs
+
+on:
+  #   pull_request:
+  #     branches:
+  #       - master
+  #       - dev
+  #     paths:
+  #       - 'docs/**'
+  #       - 'dimos/**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check_links:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run doclinks
+        run: |
+            python -m dimos.utils.docs.doclinks docs/
+
+      - uses: leshy/md-babel-py@main
+        with:
+          files: 'docs/**/*.md'
+          # maybe later we can enfoce python examples to be runnable, for now just diagram generation
+          args: --lang asymptote,pikchr,openscad,diagon
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'Generate diagrams'
+    
