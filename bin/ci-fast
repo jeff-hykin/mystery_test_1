@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 echo "Ensuring pip versions are correct" 
-time uv sync --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
+time uv sync --frozen --extra base --extra dev --extra manipulation --extra misc --extra unitree --extra drone
 
 echo "Running pre-commit checks"
 time pre-commit run --all-files
