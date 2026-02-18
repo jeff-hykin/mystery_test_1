@@ -40,6 +40,66 @@ jobs:
             python3 -c "import sysconfig; print(sysconfig.get_config_var('CFLAGS'))"
             
             
+            # stupid hack cause python+cmake sucks (and also because of our -match=native requirement)
+            # Create a tiny compiler wrapper that strips:  -arch x86_64
+            # (handles both forms: "-arch x86_64" and "-arch=x86_64")
+            # Writes the script using echo (as requested).
+            mkdir -p .ci/bin
+
+            echo '#!/usr/bin/env bash
+            set -e
+
+            # Choose the real compiler based on how we were invoked
+            base="$(basename "$0")"
+            if [[ "$base" == *"++"* ]]; then
+              real="$(xcrun --find clang++)"
+            else
+              real="$(xcrun --find clang)"
+            fi
+
+            # Filter args: remove "-arch x86_64" (two-arg form) and "-arch=x86_64" (one-arg form)
+            out=()
+            skip_next=0
+            for a in "$@"; do
+              if (( skip_next )); then
+                skip_next=0
+                continue
+              fi
+
+              if [[ "$a" == "-arch" ]]; then
+                skip_next=1
+                continue
+              fi
+
+              if [[ "$a" == "x86_64" ]]; then
+                # only gets hit if someone passed a bare x86_64 without -arch; ignore it
+                continue
+              fi
+
+              if [[ "$a" == "-arch=x86_64" ]]; then
+                continue
+              fi
+
+              out+=("$a")
+            done
+
+            exec "$real" "${out[@]}"
+            ' > .ci/bin/clang-strip-x86
+
+            chmod +x .ci/bin/clang-strip-x86
+
+            # Provide both CC and CXX entrypoints (some builds call clang++, some call clang)
+            ln -sf clang-strip-x86 .ci/bin/clang
+            ln -sf clang-strip-x86 .ci/bin/clang++
+            ln -sf clang-strip-x86 .ci/bin/cc
+            ln -sf clang-strip-x86 .ci/bin/c++
+
+            # Use these in the same step you run uv/pip
+            export PATH="$PWD/.ci/bin:$PATH"
+            export CC="$PWD/.ci/bin/clang"
+            export CXX="$PWD/.ci/bin/clang++"
+            
+            
             # because we add "-march=native" in setup.py and there's a compiler arg issue with that on macos arm
             export ARCHFLAGS="-arch $(uname -m)"
             export CFLAGS="-O3 -march=armv8-a"
