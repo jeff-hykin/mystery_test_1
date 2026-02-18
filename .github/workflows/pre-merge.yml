@@ -33,20 +33,18 @@ jobs:
         run: |
           # if macos
           if [ "$(uname)" = "Darwin" ]; then
-            echo "stuff"
-            echo "stuff1"
+            # macos cant perform the -march=native optimization on the universal binary (arm and x86 combined)
+            # we have to switch to the arm-only binary to make it work
             uv run --no-sync python -c "import platform,sys; print(platform.machine()); print(sys.executable)"
-            echo "stuff2"
             file "$(uv run --no-sync python -c 'import sys; print(sys.executable)')"
-            echo "stuff3"
             python3 -c "import sysconfig; print(sysconfig.get_config_var('CFLAGS'))"
-            echo "stuff"
-            echo "stuff"
-            echo "stuff"
+            
+            
             # because we add "-march=native" in setup.py and there's a compiler arg issue with that on macos arm
             export ARCHFLAGS="-arch $(uname -m)"
             export CFLAGS="-O3 -march=armv8-a"
             export CXXFLAGS="-O3 -march=armv8-a"
+            export CMAKE_OSX_ARCHITECTURES=$(uname -m)
             # export CXXFLAGS="-Xclang -target-cpu -Xclang $target"
             # export CFLAGS="-Xclang -target-cpu -Xclang $target"
             # install brew
